@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(find /d/Projects-Shem/Thesis/2026/EngiRent -type f -name *.py)",
+      "Bash(npx prisma:*)",
+      "Bash(grep -r \"verifyDeposit\\\\|verifyReturn\\\\|verifyItem\\\\|UPDATE.*attemptNumber\" /d/Projects-Shem/Thesis/2026/EngiRent/server/src --include=*.ts)",
+      "Bash(find d:/Projects-Shem/Thesis/2026/EngiRent/server/python_server -name requirements*.txt)",
+      "Bash(pandoc --version)",
+      "Bash(python -c \"import weasyprint; print\\(''weasyprint ok''\\)\")",
+      "Bash(python -c \"import markdown2; print\\(''markdown2 ok''\\)\")",
+      "Bash(npm list:*)",
+      "Bash(python -m pip show reportlab)",
+      "Bash(pip install:*)",
+      "Bash(python generate_pdf.py)",
+      "Bash(npm install:*)",
+      "Bash(md-to-pdf AI_SYSTEM_DOCUMENTATION.md)",
+      "Bash(grep -E \"\\\\.\\(md|json|yaml|yml|env|docker|gitignore\\)$\")",
+      "Bash(cmd /c \"fsutil reparsepoint query \"\"C:\\\\Projects\\\\Thesis\\\\2026\\\\EngiRent\"\" 2>&1 | head -5\")",
+      "Bash(cmd /c \"dir /AL C:\\\\Projects\\\\Thesis\\\\2026 2>&1\")",
+      "Bash(powershell -Command \"Get-Item ''C:\\\\Projects\\\\Thesis\\\\2026\\\\EngiRent'' | Select-Object Name, LinkType, Target\")",
+      "Bash(powershell -Command \"[System.IO.Path]::GetFullPath\\(''C:\\\\Projects\\\\Thesis\\\\2026\\\\EngiRent''\\); [System.IO.Directory]::Exists\\(''C:\\\\Projects\\\\Thesis\\\\2026\\\\EngiRent''\\); \\(Get-Item ''C:\\\\Projects\\\\Thesis\\\\2026\\\\EngiRent''\\).Attributes\")",
+      "Bash(powershell -Command \"Get-Item ''C:\\\\Projects'' | Select-Object FullName, LinkType, Target, Attributes; Get-Item ''C:\\\\Projects-Shem'' -ErrorAction SilentlyContinue | Select-Object FullName, LinkType, Target, Attributes\")",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:render.com)",
+      "WebFetch(domain:www.prisma.io)",
+      "Bash(cp -r src node_server/)",
+      "Bash(cp -r prisma node_server/)",
+      "Bash(cp package.json package-lock.json tsconfig.json .env .env.example .gitignore Dockerfile docker-compose.yml .dockerignore node_server/)",
+      "Bash(rm -rf src prisma dist package.json package-lock.json tsconfig.json .env .env.example .gitignore Dockerfile docker-compose.yml .dockerignore)",
+      "Bash(rm -rf nodeserver)"
+    ]
+  }
+}

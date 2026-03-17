@@ -1,0 +1,73 @@
+services:
+  # ─── Node.js / Express API ───────────────────────────────────────────────────
+  - type: web
+    name: engirent-api
+    runtime: node
+    rootDir: server/node_server
+    region: singapore
+    plan: free
+    buildCommand: npm install --production=false && npm run build
+    startCommand: npm start
+    preDeployCommand: npx prisma migrate deploy
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false                  # Set manually in Render dashboard
+      - key: JWT_SECRET
+        sync: false                  # Set manually in Render dashboard
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: JWT_REFRESH_SECRET
+        sync: false                  # Set manually in Render dashboard
+      - key: JWT_REFRESH_EXPIRE
+        value: 30d
+      - key: SUPABASE_URL
+        sync: false                  # Set manually in Render dashboard
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false                  # Set manually in Render dashboard
+      - key: SUPABASE_STORAGE_BUCKET
+        value: media
+      - key: ML_SERVICE_URL
+        value: http://localhost:8001  # Update when ML service is hosted
+      - key: CLIENT_WEB_URL
+        value: https://engirent-web.onrender.com
+      - key: CLIENT_MOBILE_URL
+        value: https://engirent-web.onrender.com
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
+      - key: LOG_LEVEL
+        value: info
+
+  # ─── Next.js Admin Console ───────────────────────────────────────────────────
+  - type: web
+    name: engirent-admin
+    runtime: node
+    rootDir: client/admin
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://engirent-api.onrender.com/api/v1
+
+  # ─── Next.js Public Website ──────────────────────────────────────────────────
+  - type: web
+    name: engirent-web
+    runtime: node
+    rootDir: client/web
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://engirent-api.onrender.com/api/v1

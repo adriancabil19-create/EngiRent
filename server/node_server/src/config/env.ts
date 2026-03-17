@@ -28,11 +28,10 @@ const envSchema = z.object({
   GCASH_SECRET_KEY: z.string().optional(),
   GCASH_PUBLIC_KEY: z.string().optional(),
 
-  // AWS S3 (optional in development)
-  AWS_REGION: z.string().optional(),
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_BUCKET_NAME: z.string().optional(),
+  // Supabase Storage
+  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  SUPABASE_STORAGE_BUCKET: z.string().default('media'),
 
   // Frontend URLs
   CLIENT_WEB_URL: z.string().url().default('http://localhost:3000'),

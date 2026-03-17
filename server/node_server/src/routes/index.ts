@@ -5,11 +5,12 @@ import rentalRoutes from './rentalRoutes';
 import paymentRoutes from './paymentRoutes';
 import kioskRoutes from './kioskRoutes';
 import notificationRoutes from './notificationRoutes';
+import uploadRoutes from './uploadRoutes';
 
 const router = Router();
 
 // Health check
-router.get('/health', (req, res) => {
+router.get('/health', (_req, res) => {
   res.json({
     success: true,
     message: 'EngiRent API is running',
@@ -24,5 +25,6 @@ router.use('/rentals', rentalRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/kiosk', kioskRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/upload', uploadRoutes);
 
 export default router;

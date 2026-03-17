@@ -14,19 +14,19 @@ interface StatsCardProps {
 
 export default function StatsCard({ title, value, icon: Icon, color, trend }: StatsCardProps) {
   return (
-    <Card>
-      <CardBody className="p-6">
-        <div className="flex items-center justify-between">
+    <Card className="app-surface border border-[var(--color-border)]">
+      <CardBody className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-gray-600 text-sm">{title}</p>
-            <p className="text-3xl font-bold mt-2">{value}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] app-muted">{title}</p>
+            <p className="mt-2 text-2xl font-extrabold text-[var(--color-ink)] sm:text-3xl">{value}</p>
             {trend && (
-              <p className={`text-sm mt-2 ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}% from last month
+              <p className={`mt-2 text-xs font-semibold ${trend.isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {trend.isPositive ? 'UP' : 'DOWN'} {Math.abs(trend.value)}% from last month
               </p>
             )}
           </div>
-          <div className={`p-4 rounded-full ${color}`}>
+          <div className={`rounded-2xl p-3 ${color}`}>
             <Icon size={24} className="text-white" />
           </div>
         </div>

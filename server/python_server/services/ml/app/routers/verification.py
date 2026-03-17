@@ -7,6 +7,7 @@ Endpoints:
     GET  /health           - Service health check
 """
 
+import json
 import logging
 import os
 import tempfile
@@ -18,6 +19,7 @@ from ..config import settings
 from ..models.schemas import (
     FeatureExtractionResponse,
     HealthResponse,
+    StorableFeatures,
     VerificationResponse,
 )
 
@@ -61,6 +63,10 @@ async def verify_item(
         ..., description="Kiosk camera captures (3-5)"
     ),
     attempt_number: int = Form(default=1, ge=1, le=10),
+    reference_features: str | None = Form(
+        default=None,
+        description="JSON-encoded pre-extracted features from Item.mlFeatures (skips ResNet50 re-extraction)",
+    ),
 ):
     """
     Full hybrid verification: compare owner images with kiosk camera images.
@@ -97,10 +103,13 @@ async def verify_item(
             attempt_number,
         )
 
+        parsed_features = json.loads(reference_features) if reference_features else None
+
         result = verifier.verify(
             original_sources=orig_paths,
             kiosk_sources=kiosk_paths,
             attempt_number=attempt_number,
+            reference_features=parsed_features,
         )
 
         return VerificationResponse(**result)
@@ -138,6 +147,12 @@ async def extract_features(
             traditional_features_count=len(features["traditional"]),
             deep_features_count=len(features["deep"]),
             ocr_texts=features["ocr_texts"],
+            features=StorableFeatures(
+                traditional=features["traditional"],
+                deep=features["deep"],
+                ocr_texts=features["ocr_texts"],
+                image_count=features["image_count"],
+            ),
         )
     except Exception as e:
         logger.exception("Feature extraction failed")

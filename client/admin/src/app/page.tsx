@@ -16,8 +16,10 @@ export default function Home() {
   }, [router]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p>Loading...</p>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="app-surface rounded-2xl border border-[var(--color-border)] px-6 py-5 text-sm font-semibold app-muted">
+        Preparing admin console...
+      </div>
     </div>
   );
 }

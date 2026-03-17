@@ -1,25 +1,82 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@plugin "../../hero.js";
+
+@source "../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+
+@theme {
+  --font-sans: "Manrope", sans-serif;
+}
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  --color-bg: #f4f8ff;
+  --color-surface: #ffffff;
+  --color-surface-soft: #eef4ff;
+  --color-border: #dbe7ff;
+  --color-ink: #0f172a;
+  --color-muted: #5b6b88;
+  --color-primary: #2563eb;
+  --color-secondary: #10b981;
+  --color-accent: #f59e0b;
+  --color-danger: #ef4444;
+  --shadow-soft: 0 10px 30px rgba(28, 63, 128, 0.08);
+}
+
+.dark {
+  --color-bg: #0b1220;
+  --color-surface: #111d35;
+  --color-surface-soft: #152647;
+  --color-border: #28406d;
+  --color-ink: #f5f9ff;
+  --color-muted: #a8bcdd;
+  --color-primary: #4f8bff;
+  --color-secondary: #35c89a;
+  --color-accent: #f9b233;
+  --color-danger: #ff6b6b;
+  --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --color-bg: #0b1220;
+    --color-surface: #111d35;
+    --color-surface-soft: #152647;
+    --color-border: #28406d;
+    --color-ink: #f5f9ff;
+    --color-muted: #a8bcdd;
+    --color-primary: #4f8bff;
+    --color-secondary: #35c89a;
+    --color-accent: #f9b233;
+    --color-danger: #ff6b6b;
+    --shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.35);
   }
 }
 
 body {
-  color: rgb(var(--foreground));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background))
-    )
-    rgb(var(--background));
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at 5% 5%, rgba(37, 99, 235, 0.18), transparent 28%),
+    radial-gradient(circle at 95% 0%, rgba(16, 185, 129, 0.13), transparent 24%),
+    var(--color-bg);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+.app-shell {
+  background: var(--color-bg);
+}
+
+.app-surface {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.app-soft {
+  background: var(--color-surface-soft);
+}
+
+.app-muted {
+  color: var(--color-muted);
 }

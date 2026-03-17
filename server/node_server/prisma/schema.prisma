@@ -127,9 +127,14 @@ model Rental {
   returnLockerId    String?
 
   // Verification
+  depositVerificationId String?       @unique
   verificationId    String?       @unique
   verificationScore Float?
   verificationStatus VerificationStatus?
+
+  // Retry attempt counters (incremented on each RETRY/REJECTED decision)
+  depositAttemptCount Int           @default(0)
+  returnAttemptCount  Int           @default(0)
 
   // Timestamps
   createdAt         DateTime      @default(now())
@@ -143,7 +148,8 @@ model Rental {
   renter            User          @relation("RentalRenter", fields: [renterId], references: [id])
   owner             User          @relation("RentalOwner", fields: [ownerId], references: [id])
   transactions      Transaction[]
-  verification      Verification? @relation(fields: [verificationId], references: [id])
+  depositVerification Verification? @relation("DepositVerification", fields: [depositVerificationId], references: [id])
+  verification      Verification? @relation("ReturnVerification", fields: [verificationId], references: [id])
   depositLocker     Locker?       @relation("DepositLocker", fields: [depositLockerId], references: [id])
   claimLocker       Locker?       @relation("ClaimLocker", fields: [claimLockerId], references: [id])
   returnLocker      Locker?       @relation("ReturnLocker", fields: [returnLockerId], references: [id])
@@ -219,7 +225,8 @@ model Verification {
   updatedAt         DateTime  @updatedAt
 
   // Relations
-  rental            Rental?
+  rental            Rental?   @relation("ReturnVerification")
+  depositRental     Rental?   @relation("DepositVerification")
 
   @@index([decision])
   @@index([status])
@@ -338,16 +345,16 @@ enum ItemCondition {
 }
 
 enum RentalStatus {
-  PENDING           // Initial booking created
-  AWAITING_DEPOSIT  // Waiting for owner to deposit item
-  DEPOSITED         // Item deposited in locker
-  AWAITING_CLAIM    // Waiting for renter to claim
-  ACTIVE            // Item claimed and in use
-  AWAITING_RETURN   // Rental period ended, waiting for return
-  VERIFICATION      // Item returned, under AI verification
-  COMPLETED         // Successfully completed
-  CANCELLED         // Cancelled by either party
-  DISPUTED          // Issue reported
+  PENDING
+  AWAITING_DEPOSIT
+  DEPOSITED
+  AWAITING_CLAIM
+  ACTIVE
+  AWAITING_RETURN
+  VERIFICATION
+  COMPLETED
+  CANCELLED
+  DISPUTED
 }
 
 enum TransactionType {

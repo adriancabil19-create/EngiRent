@@ -36,7 +36,7 @@ dependencies:
 
   # Forms & Validation
   flutter_form_builder: ^9.1.1
-  form_builder_validators: ^9.1.0
+  form_builder_validators: ^10.0.1
 
   # Image Handling
   image_picker: ^1.0.7

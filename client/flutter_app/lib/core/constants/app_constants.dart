@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AppConstants {
   // API Configuration
   static const String baseUrl = 'http://localhost:5000/api/v1';
@@ -43,4 +45,8 @@ class AppConstants {
   static const int defaultPageSize = 10;
   static const int maxImageSize = 10485760; // 10MB
   static const List<String> allowedImageTypes = ['jpg', 'jpeg', 'png', 'webp'];
+
+  // Dev/demo fallback mode for offline UI checks
+  static bool get demoMode =>
+      kDebugMode && const bool.fromEnvironment('USE_DEMO_MODE', defaultValue: true);
 }

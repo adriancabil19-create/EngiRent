@@ -1,10 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { Card, CardBody, CardHeader } from '@heroui/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import api from '@/lib/api';
+import { Card, CardBody, CardHeader, Chip } from '@heroui/react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from 'recharts';
 
 const monthlyData = [
   { month: 'Jan', rentals: 45, revenue: 12500 },
@@ -26,65 +35,72 @@ const categoryData = [
 export default function ReportsPage() {
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Reports & Analytics</h1>
+      <div className="space-y-5 sm:space-y-6">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] app-muted">Analytics</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-extrabold text-[var(--color-ink)] sm:text-3xl">Reports and Trends</h1>
+            <Chip size="sm" variant="flat" color="primary">
+              Sample Data
+            </Chip>
+          </div>
+        </div>
 
-        {/* Monthly Revenue */}
-        <Card>
-          <CardHeader>
-            <h2 className="text-xl font-semibold">Monthly Revenue Trend</h2>
-          </CardHeader>
-          <CardBody>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="revenue" stroke="#3b82f6" name="Revenue (₱)" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="app-surface rounded-2xl border border-[var(--color-border)] lg:col-span-2">
+            <CardHeader>
+              <h2 className="text-lg font-bold text-[var(--color-ink)]">Monthly Revenue Trend</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={3} name="Revenue (PHP)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
 
-        {/* Rental Trends */}
-        <Card>
-          <CardHeader>
-            <h2 className="text-xl font-semibold">Monthly Rentals</h2>
-          </CardHeader>
-          <CardBody>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="rentals" fill="#10b981" name="Rentals" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
+          <Card className="app-surface rounded-2xl border border-[var(--color-border)]">
+            <CardHeader>
+              <h2 className="text-lg font-bold text-[var(--color-ink)]">Monthly Rentals</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="rentals" fill="#10b981" name="Rentals" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
 
-        {/* Category Distribution */}
-        <Card>
-          <CardHeader>
-            <h2 className="text-xl font-semibold">Items by Category</h2>
-          </CardHeader>
-          <CardBody>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={categoryData} layout="horizontal">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="category" type="category" width={100} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="count" fill="#8b5cf6" name="Items" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
+          <Card className="app-surface rounded-2xl border border-[var(--color-border)]">
+            <CardHeader>
+              <h2 className="text-lg font-bold text-[var(--color-ink)]">Items by Category</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={categoryData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="category" type="category" width={110} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="count" fill="#f59e0b" name="Items" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
+        </div>
       </div>
     </AdminLayout>
   );

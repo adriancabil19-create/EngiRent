@@ -3,6 +3,8 @@ import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors';
 import logger from '../utils/logger';
+import axios from 'axios';
+import env from '../config/env';
 
 export const createItem = async (
   req: AuthRequest,
@@ -56,6 +58,33 @@ export const createItem = async (
     });
 
     logger.info(`Item created: ${item.id} by user ${req.user.userId}`);
+
+    // Fix 5: Pre-extract ML features in the background so verification is faster.
+    // Uses setImmediate to avoid blocking the HTTP response — failure only logs a warning.
+    if (env.ML_SERVICE_URL && images && (images as string[]).length > 0) {
+      setImmediate(async () => {
+        try {
+          const formData = new FormData();
+          for (const url of images as string[]) {
+            const resp = await axios.get(url, { responseType: 'arraybuffer' });
+            const blob = new Blob([resp.data as ArrayBuffer], { type: 'image/jpeg' });
+            formData.append('images', blob, 'image.jpg');
+          }
+          const mlResp = await axios.post(
+            `${env.ML_SERVICE_URL}/api/v1/extract-features`,
+            formData,
+            { headers: { ...(env.ML_SERVICE_API_KEY && { 'X-API-Key': env.ML_SERVICE_API_KEY }) } }
+          );
+          await prisma.item.update({
+            where: { id: item.id },
+            data: { mlFeatures: mlResp.data.features as any },
+          });
+          logger.info(`ML features cached for item ${item.id}`);
+        } catch (err) {
+          logger.warn(`Failed to pre-extract ML features for item ${item.id}:`, err);
+        }
+      });
+    }
 
     res.status(201).json({
       success: true,

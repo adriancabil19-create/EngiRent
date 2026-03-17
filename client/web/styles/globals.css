@@ -7,6 +7,38 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-    --font-sans: "font", sans-serif;
-    --font-mono: "monospace", monospace;
+  --font-sans: "Manrope", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+:root {
+  --brand-bg: #f4f8ff;
+  --brand-surface: #ffffff;
+  --brand-soft: #eaf2ff;
+  --brand-border: #dbe7ff;
+  --brand-ink: #0f172a;
+  --brand-muted: #55627f;
+  --brand-primary: #2563eb;
+  --brand-secondary: #10b981;
+  --brand-accent: #f59e0b;
+}
+
+.dark {
+  --brand-bg: #0b1220;
+  --brand-surface: #111d35;
+  --brand-soft: #152647;
+  --brand-border: #28406d;
+  --brand-ink: #f5f9ff;
+  --brand-muted: #a8bcdd;
+  --brand-primary: #4f8bff;
+  --brand-secondary: #35c89a;
+  --brand-accent: #f9b233;
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.17), transparent 25%),
+    radial-gradient(circle at 95% 15%, rgba(16, 185, 129, 0.12), transparent 22%),
+    var(--brand-bg);
+  color: var(--brand-ink);
 }

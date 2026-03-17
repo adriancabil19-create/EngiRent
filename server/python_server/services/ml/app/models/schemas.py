@@ -42,11 +42,20 @@ class VerificationResponse(BaseModel):
     sift_all_ratios: list[float] = Field(description="All pairwise SIFT match ratios")
 
 
+class StorableFeatures(BaseModel):
+    """Pre-extracted feature data ready to be stored in Item.mlFeatures."""
+    traditional: list = Field(description="Traditional CV feature dicts (one per image)")
+    deep: list = Field(description="ResNet50 feature vectors serialized as float lists")
+    ocr_texts: list[str] = Field(description="OCR-extracted text per image")
+    image_count: int = Field(description="Number of images processed")
+
+
 class FeatureExtractionResponse(BaseModel):
     image_count: int = Field(description="Number of images processed")
     traditional_features_count: int = Field(description="Number of traditional feature sets")
     deep_features_count: int = Field(description="Number of deep feature vectors")
     ocr_texts: list[str] = Field(description="OCR-extracted text from each image")
+    features: StorableFeatures = Field(description="Full feature data for storage in Item.mlFeatures")
 
 
 class HealthResponse(BaseModel):
