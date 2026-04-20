@@ -47,11 +47,11 @@ sudo apt install -y git python3-pip python3-venv chromium unclutter
 sudo systemctl enable NetworkManager
 ```
 
-Enable camera interfaces:
+USB cameras are plug-and-play — no raspi-config step needed.
+Verify cameras are detected after plugging in:
 ```bash
-sudo raspi-config
-# Interface Options → Camera → Enable (both)
-# Interface Options → I2C  → Enable
+ls /dev/video*
+# Should show /dev/video0, /dev/video2, /dev/video4 etc.
 ```
 
 ---
@@ -268,7 +268,7 @@ sudo systemctl restart engirent-kiosk.service
 | Issue | Fix |
 |---|---|
 | `lgpio` not found | `sudo apt install python3-lgpio` |
-| Camera not detected | `vcgencmd get_camera`, re-enable in raspi-config |
+| Camera not detected | Run `ls /dev/video*` — try unplugging and replugging the USB camera |
 | Relay not triggering | Check `RELAY_ACTIVE_LEVEL` in `.env` (0 = active-LOW) |
 | Actuator runs one way only | Swap the two motor wires on OUT1/OUT2 (or OUT3/OUT4), or flip DIR_PIN logic in `config.py` |
 | WiFi provisioning portal unreachable | Ensure Pi is not already connected to WiFi, check `nmcli dev wifi` |
