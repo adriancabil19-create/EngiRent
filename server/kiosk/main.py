@@ -179,7 +179,11 @@ def init_hardware():
 # ── Socket.io client loop ──────────────────────────────────────────────────────
 
 async def run_socket_client(solenoid, actuator, camera):
-    init_hardware(solenoid, actuator, camera)
+    # Inject hardware directly into socket_client module globals
+    import services.socket_client as _sc
+    _sc._solenoid = solenoid
+    _sc._actuator = actuator
+    _sc._camera   = camera
     log.info("[SOCKET] Hardware injected into socket client")
     await connect_to_server()
 

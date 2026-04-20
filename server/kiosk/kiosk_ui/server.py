@@ -55,7 +55,8 @@ def on_browser_connect():
 
 def run_ui_server():
     log.info("Kiosk UI server starting on port %s", UI_PORT)
-    local_sio.run(app, host="0.0.0.0", port=UI_PORT, use_reloader=False, log_output=False)
+    local_sio.run(app, host="0.0.0.0", port=UI_PORT, use_reloader=False,
+                  log_output=False, allow_unsafe_werkzeug=True)
 
 
 def start_ui_server_thread():

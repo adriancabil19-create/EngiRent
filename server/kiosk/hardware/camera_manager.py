@@ -22,10 +22,14 @@ log = logging.getLogger("kiosk.camera")
 
 # USB camera device paths – adjust if Linux assigns different indices
 # On Pi 5 with 2 CSI cameras, USB cams usually start at /dev/video4
+# Integer indices for V4L2 — OpenCV CAP_V4L2 requires int, not device path string
+# On Pi 5 with 2 CSI cameras + 3 USB cameras, USB cams typically map to:
+# video0/1 = USB cam 1, video2/3 = USB cam 2, video4/5 = USB cam 3
+# Run `v4l2-ctl --list-devices` to confirm and adjust these if needed
 USB_DEVICE_MAP = {
-    0: "/dev/video4",   # USB port 1 → Locker 3 camera
-    1: "/dev/video5",   # USB port 2 → Locker 4 camera
-    2: "/dev/video6",   # USB port 3/Hub → Face recognition camera
+    0: 0,   # USB cam 1 → Locker 3
+    1: 2,   # USB cam 2 → Locker 4
+    2: 4,   # USB cam 3 → Face recognition
 }
 
 CSI_RESOLUTION = (1280, 960)
