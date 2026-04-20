@@ -65,29 +65,30 @@ class CameraManager:
             log.error("CSI camera init failed: %s", e)
 
         # ── USB cameras ───────────────────────────────────────────────────────
+        # Force V4L2 backend — Pi OS Trixie OpenCV defaults to GStreamer which fails
         for locker_id, pins in LOCKER_PINS.items():
             if pins["camera_type"] == "usb":
                 usb_idx = pins["camera_index"]
                 device = USB_DEVICE_MAP.get(usb_idx, usb_idx)
-                cap = cv2.VideoCapture(device)
+                cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
                 if cap.isOpened():
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, USB_RESOLUTION[0])
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, USB_RESOLUTION[1])
                     self._usb[locker_id] = cap
-                    log.info("USB camera locker=%s device=%s started", locker_id, device)
+                    log.info("USB camera locker=%s device=%s started (V4L2)", locker_id, device)
                 else:
-                    log.error("USB camera locker=%s device=%s FAILED", locker_id, device)
+                    log.error("USB camera locker=%s device=%s FAILED — check ls /dev/video*", locker_id, device)
 
         # ── Face recognition camera ───────────────────────────────────────────
         face_device = USB_DEVICE_MAP[2]
-        cap = cv2.VideoCapture(face_device)
+        cap = cv2.VideoCapture(face_device, cv2.CAP_V4L2)
         if cap.isOpened():
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, FACE_RESOLUTION[0])
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FACE_RESOLUTION[1])
             self._face_cap = cap
-            log.info("Face camera device=%s started", face_device)
+            log.info("Face camera device=%s started (V4L2)", face_device)
         else:
-            log.error("Face camera device=%s FAILED", face_device)
+            log.error("Face camera device=%s FAILED — check ls /dev/video*", face_device)
 
     # ── Capture helpers ────────────────────────────────────────────────────────
 
