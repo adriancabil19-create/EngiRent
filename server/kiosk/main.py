@@ -126,7 +126,7 @@ def _banner():
 from provisioning.wifi_manager import is_wifi_connected
 from provisioning.ap_portal import AP_SSID, AP_PASSWORD, AP_IP, run_portal, start_ap_mode
 from kiosk_ui.server import start_ui_server_thread
-from services.socket_client import KioskSocketClient
+from services.socket_client import init_hardware, connect_to_server
 from hardware.gpio_controller import SolenoidController
 from hardware.actuator_controller import ActuatorController
 from hardware.camera_manager import CameraManager
@@ -179,32 +179,9 @@ def init_hardware():
 # ── Socket.io client loop ──────────────────────────────────────────────────────
 
 async def run_socket_client(solenoid, actuator, camera):
-    server_url = os.getenv("SERVER_URL", "http://localhost:3001")
-    kiosk_id   = os.getenv("KIOSK_ID", "kiosk-1")
-
-    client = KioskSocketClient(
-        server_url=server_url,
-        kiosk_id=kiosk_id,
-        solenoid=solenoid,
-        actuator=actuator,
-        camera=camera,
-    )
-
-    backoff = 5
-    attempt = 0
-    while True:
-        attempt += 1
-        log.info("[SOCKET] Connecting to %s (attempt #%d)…", server_url, attempt)
-        try:
-            await client.connect()
-            log.info("[SOCKET] Connected ✓  kiosk_id=%s", kiosk_id)
-            backoff = 5             # reset on successful connect
-            await client.wait()
-            log.warning("[SOCKET] Disconnected — reconnecting in %d s…", backoff)
-        except Exception as exc:
-            log.error("[SOCKET] Error: %s", exc)
-        await asyncio.sleep(backoff)
-        backoff = min(backoff * 2, 60)
+    init_hardware(solenoid, actuator, camera)
+    log.info("[SOCKET] Hardware injected into socket client")
+    await connect_to_server()
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -230,8 +207,11 @@ def main():
         asyncio.run(run_socket_client(solenoid, actuator, camera))
     except KeyboardInterrupt:
         log.info("Kiosk stopped by user (Ctrl+C)")
-        solenoid.lock_all()
-        solenoid.cleanup()
+        try:
+            solenoid.lock_all()
+            solenoid.cleanup()
+        except Exception:
+            pass
         log.info("All solenoids locked. Goodbye.")
 
 

@@ -72,7 +72,7 @@ cat > "$AUTOSTART_DIR/engirent-browser.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=EngiRent Kiosk Browser
-Exec=bash -c 'sleep 10 && /usr/bin/chromium --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --disable-pinch --overscroll-history-navigation=0 --ozone-platform-hint=auto --kiosk --start-fullscreen --start-maximized --window-size=1920,1080 --force-device-scale-factor=1 --app=http://localhost:8080 --check-for-update-interval=31536000'
+Exec=bash -c 'sleep 10 && /usr/bin/chromium --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --disable-pinch --overscroll-history-navigation=0 --ozone-platform-hint=auto --password-store=basic --kiosk --start-fullscreen --start-maximized --window-size=1920,1080 --force-device-scale-factor=1 --app=http://localhost:8080 --check-for-update-interval=31536000'
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
