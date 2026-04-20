@@ -85,35 +85,31 @@ except FileNotFoundError:
 except Exception as e:
     fail(str(e))
 
-# ── 6. Test each /dev/videoX with OpenCV GStreamer ────────────────────────────
-section("Camera open test  (OpenCV GStreamer)")
-import glob
-video_nodes = sorted(glob.glob("/dev/video*"))
-if not video_nodes:
-    warn("No /dev/video* devices found")
-else:
-    import cv2, re
-    for node in video_nodes:
-        m = re.search(r"(/dev/video\d+)", node)
-        if not m:
-            continue
-        device = m.group(1)
-        gst = (
-            f"v4l2src device={device} ! "
-            f"videoconvert ! video/x-raw,format=BGR ! "
-            f"appsink max-buffers=1 drop=true sync=false"
-        )
-        cap = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
-        if cap.isOpened():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                h, w = frame.shape[:2]
-                ok(f"{device}  →  opened + read frame ({w}x{h})")
-            else:
-                warn(f"{device}  →  opened but no frame (metadata node?)")
-            cap.release()
+# ── 6. Test USB camera nodes with OpenCV GStreamer ────────────────────────────
+# Only test even-numbered nodes 0–10; Pi ISP nodes (video19+) stall GStreamer.
+section("Camera open test  (OpenCV GStreamer, USB nodes only)")
+import cv2 as _cv2, os as _os
+USB_TEST_NODES = [f"/dev/video{i}" for i in range(0, 11, 2)]  # 0,2,4,6,8,10
+for device in USB_TEST_NODES:
+    if not _os.path.exists(device):
+        continue
+    gst = (
+        f"v4l2src device={device} ! "
+        f"videoconvert ! video/x-raw,format=BGR ! "
+        f"appsink max-buffers=1 drop=true sync=false"
+    )
+    import warnings
+    cap = _cv2.VideoCapture(gst, _cv2.CAP_GSTREAMER)
+    if cap.isOpened():
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            h, w = frame.shape[:2]
+            ok(f"{device}  →  frame captured ({w}x{h})")
         else:
-            fail(f"{device}  →  could not open via GStreamer")
+            warn(f"{device}  →  opened but no frame (metadata/busy?)")
+        cap.release()
+    else:
+        fail(f"{device}  →  could not open")
 
 # ── 7. Face cascade ────────────────────────────────────────────────────────────
 section("Face detection (Haar cascade)")
