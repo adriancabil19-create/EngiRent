@@ -18,10 +18,33 @@ from services.image_uploader import upload_face_image
 
 log = logging.getLogger("kiosk.face")
 
-# Haar cascade — ships with every OpenCV install, no download needed
-_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+# Locate haarcascades — cv2.data exists only in pip-installed OpenCV;
+# apt-installed (Pi OS Trixie) puts them in /usr/share/opencv4/
+_CASCADE_CANDIDATES = [
+    "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+    "/usr/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml",
+    "/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+]
+
+
+def _find_cascade_path() -> str:
+    try:
+        p = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        if __import__("os").path.exists(p):
+            return p
+    except AttributeError:
+        pass
+    for p in _CASCADE_CANDIDATES:
+        if __import__("os").path.exists(p):
+            log.info("Haar cascade found at %s", p)
+            return p
+    raise FileNotFoundError(
+        "haarcascade_frontalface_default.xml not found. "
+        "Run: sudo apt install -y python3-opencv"
+    )
+
+
+_cascade = cv2.CascadeClassifier(_find_cascade_path())
 
 
 def detect_face_in_frame(jpeg_bytes: bytes) -> tuple[bool, float]:
