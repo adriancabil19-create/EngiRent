@@ -1,15 +1,17 @@
 #!/bin/bash
 # EngiRent Kiosk – One-shot setup script for Raspberry Pi OS Trixie
-# Run once after cloning the repo:  bash setup.sh
+# Run once after cloning the repo:  sudo bash setup.sh
 
 set -e
 KIOSK_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_USER="${SUDO_USER:-$(whoami)}"
+USER_HOME="/home/$SERVICE_USER"
+USER_UID="$(id -u "$SERVICE_USER")"
 
 echo "======================================================"
 echo "  EngiRent Kiosk Setup"
 echo "  Directory : $KIOSK_DIR"
-echo "  User      : $SERVICE_USER"
+echo "  User      : $SERVICE_USER ($USER_UID)"
 echo "======================================================"
 
 # ── 1. System packages ─────────────────────────────────────────────────────────
@@ -34,10 +36,12 @@ sudo -u "$SERVICE_USER" "$KIOSK_DIR/venv/bin/pip" install --quiet -r "$KIOSK_DIR
 echo "[3/7] Checking .env…"
 if [ ! -f "$KIOSK_DIR/.env" ]; then
     cp "$KIOSK_DIR/.env.example" "$KIOSK_DIR/.env"
-    echo "  ⚠  .env created from .env.example — edit it before starting:"
+    chown "$SERVICE_USER":"$SERVICE_USER" "$KIOSK_DIR/.env"
+    echo "  ⚠  .env created — edit credentials before starting:"
     echo "     nano $KIOSK_DIR/.env"
 else
-    echo "  .env already exists, skipping."
+    chown "$SERVICE_USER":"$SERVICE_USER" "$KIOSK_DIR/.env"
+    echo "  .env already exists, fixing ownership."
 fi
 
 # ── 4. Log file ────────────────────────────────────────────────────────────────
@@ -45,43 +49,54 @@ echo "[4/7] Creating log file…"
 touch /var/log/engirent-kiosk.log
 chown "$SERVICE_USER":"$SERVICE_USER" /var/log/engirent-kiosk.log
 
-# ── 5. Systemd services ────────────────────────────────────────────────────────
+# ── 5. Systemd kiosk controller service ───────────────────────────────────────
 echo "[5/7] Installing systemd services…"
 
-# Patch WorkingDirectory and User to match actual install path and user
 sed \
     -e "s|/home/pi/engirent/server/kiosk|$KIOSK_DIR|g" \
     -e "s|User=pi|User=$SERVICE_USER|g" \
     "$KIOSK_DIR/systemd/engirent-kiosk.service" \
     > /etc/systemd/system/engirent-kiosk.service
 
-sed \
-    -e "s|User=pi|User=$SERVICE_USER|g" \
-    "$KIOSK_DIR/systemd/engirent-kiosk-browser.service" \
-    > /etc/systemd/system/engirent-kiosk-browser.service
-
 systemctl daemon-reload
 systemctl enable engirent-kiosk.service
-systemctl enable engirent-kiosk-browser.service
-echo "  Services enabled (will start on next boot)."
+echo "  engirent-kiosk.service enabled."
 
-# ── 6. Desktop auto-login ──────────────────────────────────────────────────────
-echo "[6/7] Configuring desktop auto-login…"
-raspi-config nonint do_boot_behaviour B4   # Desktop autologin
+# ── 6. XDG autostart for Chromium (Wayland-compatible) ────────────────────────
+echo "[6/7] Installing Chromium autostart…"
 
-# ── 7. Disable screen blanking ─────────────────────────────────────────────────
-echo "[7/7] Disabling screen blanking…"
-AUTOSTART_DIR="/home/$SERVICE_USER/.config/lxsession/LXDE-pi"
-AUTOSTART_FILE="$AUTOSTART_DIR/autostart"
+AUTOSTART_DIR="$USER_HOME/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
+
+cat > "$AUTOSTART_DIR/engirent-browser.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=EngiRent Kiosk Browser
+Exec=bash -c 'sleep 10 && /usr/bin/chromium --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --ozone-platform-hint=auto --kiosk --app=http://localhost:8080 --start-fullscreen --check-for-update-interval=31536000'
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$AUTOSTART_DIR"
+echo "  Chromium autostart installed at $AUTOSTART_DIR/engirent-browser.desktop"
+
+# ── 7. Desktop auto-login + screen blanking ────────────────────────────────────
+echo "[7/7] Configuring desktop auto-login and screen blanking…"
+raspi-config nonint do_boot_behaviour B4
+
+LXDE_AUTOSTART_DIR="$USER_HOME/.config/lxsession/LXDE-pi"
+LXDE_AUTOSTART="$LXDE_AUTOSTART_DIR/autostart"
+mkdir -p "$LXDE_AUTOSTART_DIR"
 
 for LINE in \
     "@xset s off" \
     "@xset -dpms" \
     "@xset s noblank" \
     "@unclutter -idle 0 -root"; do
-    grep -qxF "$LINE" "$AUTOSTART_FILE" 2>/dev/null || echo "$LINE" >> "$AUTOSTART_FILE"
+    grep -qxF "$LINE" "$LXDE_AUTOSTART" 2>/dev/null || echo "$LINE" >> "$LXDE_AUTOSTART"
 done
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$LXDE_AUTOSTART_DIR"
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
@@ -89,8 +104,10 @@ echo "======================================================"
 echo "  Setup complete!"
 echo ""
 echo "  Next steps:"
-echo "  1. Edit your credentials:  nano $KIOSK_DIR/.env"
-echo "  2. Start the kiosk now:    sudo systemctl start engirent-kiosk.service"
-echo "  3. Check logs:             journalctl -u engirent-kiosk.service -f"
-echo "  4. Reboot to test full auto-start: sudo reboot"
+if grep -q "your-service-role-key\|PASTE_YOUR" "$KIOSK_DIR/.env" 2>/dev/null; then
+echo "  ⚠  1. Fill in credentials:  nano $KIOSK_DIR/.env"
+fi
+echo "  2. Start now (no reboot):   sudo systemctl start engirent-kiosk.service"
+echo "  3. Check logs:              journalctl -u engirent-kiosk.service -f"
+echo "  4. Reboot for full test:    sudo reboot"
 echo "======================================================"

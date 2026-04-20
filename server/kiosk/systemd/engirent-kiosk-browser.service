@@ -1,29 +1,34 @@
 [Unit]
 Description=EngiRent Kiosk Browser (Chromium fullscreen)
-After=graphical.target engirent-kiosk.service
+After=graphical-session.target engirent-kiosk.service
 Wants=engirent-kiosk.service
+PartOf=graphical-session.target
 
 [Service]
 Type=simple
-User=pi
+User=%i
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
-ExecStartPre=/bin/sleep 5
+Environment=XAUTHORITY=/home/%i/.Xauthority
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStartPre=/bin/sleep 8
 ExecStart=/usr/bin/chromium \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \
   --disable-restore-session-state \
+  --enable-features=UseOzonePlatform \
+  --ozone-platform-hint=auto \
   --kiosk \
   --app=http://localhost:8080 \
   --window-position=0,0 \
   --start-fullscreen \
   --check-for-update-interval=31536000
 Restart=on-failure
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=engirent-browser
 
 [Install]
-WantedBy=graphical.target
+WantedBy=graphical-session.target
