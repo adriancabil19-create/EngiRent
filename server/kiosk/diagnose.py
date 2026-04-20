@@ -85,8 +85,8 @@ except FileNotFoundError:
 except Exception as e:
     fail(str(e))
 
-# ── 6. Test each /dev/videoX with OpenCV V4L2 ─────────────────────────────────
-section("Camera open test  (OpenCV V4L2)")
+# ── 6. Test each /dev/videoX with OpenCV GStreamer ────────────────────────────
+section("Camera open test  (OpenCV GStreamer)")
 import glob
 video_nodes = sorted(glob.glob("/dev/video*"))
 if not video_nodes:
@@ -94,21 +94,26 @@ if not video_nodes:
 else:
     import cv2, re
     for node in video_nodes:
-        m = re.search(r"/dev/video(\d+)", node)
+        m = re.search(r"(/dev/video\d+)", node)
         if not m:
             continue
-        idx = int(m.group(1))
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+        device = m.group(1)
+        gst = (
+            f"v4l2src device={device} ! "
+            f"videoconvert ! video/x-raw,format=BGR ! "
+            f"appsink max-buffers=1 drop=true sync=false"
+        )
+        cap = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
         if cap.isOpened():
             ret, frame = cap.read()
             if ret and frame is not None:
                 h, w = frame.shape[:2]
-                ok(f"/dev/video{idx}  →  opened + read frame ({w}x{h})")
+                ok(f"{device}  →  opened + read frame ({w}x{h})")
             else:
-                warn(f"/dev/video{idx}  →  opened but no frame (metadata node)")
+                warn(f"{device}  →  opened but no frame (metadata node?)")
             cap.release()
         else:
-            fail(f"/dev/video{idx}  →  could not open")
+            fail(f"{device}  →  could not open via GStreamer")
 
 # ── 7. Face cascade ────────────────────────────────────────────────────────────
 section("Face detection (Haar cascade)")

@@ -17,12 +17,23 @@ log = logging.getLogger("kiosk.wifi")
 def is_wifi_connected() -> bool:
     """Return True if the Pi has an active WiFi connection."""
     try:
+        # Primary: check NetworkManager connectivity (full or limited = connected)
         result = subprocess.run(
+            ["nmcli", "-t", "networking", "connectivity"],
+            capture_output=True, text=True, timeout=5,
+        )
+        state = result.stdout.strip().lower()
+        if state in ("full", "limited", "portal"):
+            return True
+
+        # Fallback: check if any wifi-type connection is activated
+        result2 = subprocess.run(
             ["nmcli", "-t", "-f", "TYPE,STATE", "con", "show", "--active"],
             capture_output=True, text=True, timeout=5,
         )
-        for line in result.stdout.splitlines():
-            if line.startswith("wifi:") and "activated" in line:
+        for line in result2.stdout.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2 and parts[0].lower() == "wifi" and "activated" in parts[1].lower():
                 return True
         return False
     except Exception as e:
