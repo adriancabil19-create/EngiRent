@@ -20,7 +20,12 @@ log = logging.getLogger("kiosk.face")
 
 # Locate haarcascades — cv2.data exists only in pip-installed OpenCV;
 # apt-installed (Pi OS Trixie) puts them in /usr/share/opencv4/
+import os as _os
+
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+
 _CASCADE_CANDIDATES = [
+    _os.path.join(_HERE, "..", "data", "haarcascade_frontalface_default.xml"),  # bundled
     "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
     "/usr/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml",
     "/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
@@ -30,17 +35,18 @@ _CASCADE_CANDIDATES = [
 def _find_cascade_path() -> str:
     try:
         p = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        if __import__("os").path.exists(p):
+        if _os.path.exists(p):
             return p
     except AttributeError:
         pass
     for p in _CASCADE_CANDIDATES:
-        if __import__("os").path.exists(p):
+        p = _os.path.normpath(p)
+        if _os.path.exists(p):
             log.info("Haar cascade found at %s", p)
             return p
     raise FileNotFoundError(
-        "haarcascade_frontalface_default.xml not found. "
-        "Run: sudo apt install -y python3-opencv"
+        "haarcascade_frontalface_default.xml not found.\n"
+        "Fix: mkdir -p server/kiosk/data && cp <cascade.xml> server/kiosk/data/"
     )
 
 
