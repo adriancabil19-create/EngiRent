@@ -16,9 +16,15 @@ import prisma from "./config/database";
 const app: Application = express();
 const httpServer = createServer(app);
 
+const ALLOWED_ORIGINS = [
+  env.CLIENT_WEB_URL,
+  env.CLIENT_MOBILE_URL,
+  env.CLIENT_ADMIN_URL,
+];
+
 const io = new SocketServer(httpServer, {
   cors: {
-    origin: [env.CLIENT_WEB_URL, env.CLIENT_MOBILE_URL, "*"],
+    origin: ALLOWED_ORIGINS,
     credentials: true,
   },
 });
@@ -27,7 +33,7 @@ const io = new SocketServer(httpServer, {
 app.use(helmet());
 app.use(
   cors({
-    origin: [env.CLIENT_WEB_URL, env.CLIENT_MOBILE_URL],
+    origin: ALLOWED_ORIGINS,
     credentials: true,
   }),
 );

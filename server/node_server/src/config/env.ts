@@ -41,6 +41,7 @@ const envSchema = z.object({
   // Frontend URLs
   CLIENT_WEB_URL: z.string().url().default("http://localhost:3000"),
   CLIENT_MOBILE_URL: z.string().url().default("http://localhost:3000"),
+  CLIENT_ADMIN_URL: z.string().url().default("http://localhost:3001"),
 
   // Kiosk
   KIOSK_RASPBERRY_PI_URL: z.string().optional(),

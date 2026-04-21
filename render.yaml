@@ -35,6 +35,8 @@ services:
         value: https://engirent-web.onrender.com
       - key: CLIENT_MOBILE_URL
         value: https://engirent-web.onrender.com
+      - key: CLIENT_ADMIN_URL
+        value: https://engirent-admin.onrender.com
       - key: RATE_LIMIT_WINDOW_MS
         value: "900000"
       - key: RATE_LIMIT_MAX_REQUESTS
