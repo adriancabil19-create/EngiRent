@@ -4,6 +4,7 @@ import prisma from "../config/database";
 import { NotFoundError, ValidationError } from "../utils/errors";
 import logger from "../utils/logger";
 import { hashPassword } from "../utils/bcrypt";
+import kioskEventBus from "../utils/kioskEventBus";
 
 // ─── Dashboard stats ───────────────────────────────────────────────────────
 
@@ -604,7 +605,9 @@ export const sendKioskCommand = async (
       return;
     }
 
-    const payload: Record<string, unknown> = { action };
+    const commandId = Math.random().toString(16).slice(2, 10).toUpperCase();
+
+    const payload: Record<string, unknown> = { action, command_id: commandId };
     if (lockerId !== undefined) payload.locker_id = lockerId;
     if (door) payload.door = door;
     if (durationOverride !== undefined)
@@ -617,15 +620,71 @@ export const sendKioskCommand = async (
     io.to(`kiosk:${kioskId}`).emit("kiosk:command", payload);
 
     logger.info(
-      `Admin sent kiosk command to ${kioskId}: ${action} by ${req.user?.email}`,
+      `\n┌─────────────────────────────────────────────\n` +
+      `│  📤 [CMD-SENT]  Admin sent kiosk command\n` +
+      `│  Kiosk      : ${kioskId}\n` +
+      `│  Command ID : ${commandId}\n` +
+      `│  Action     : ${action}\n` +
+      `│  By         : ${req.user?.email}\n` +
+      `│  Payload    : ${JSON.stringify(payload)}\n` +
+      `└─────────────────────────────────────────────`
     );
     res.json({
       success: true,
       message: `Command "${action}" sent to kiosk ${kioskId}`,
+      data: { commandId },
     });
   } catch (error) {
     next(error);
   }
+};
+
+// ─── Kiosk SSE stream ─────────────────────────────────────────────────────
+
+export const kioskEventStream = (req: AuthRequest, res: Response): void => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering on Render
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch {
+      // client already disconnected
+    }
+  };
+
+  send("connected", { ts: Date.now() });
+
+  const onStatus = (d: unknown) => send("kiosk_status", d);
+  const onOnline = (d: unknown) => send("kiosk_online", d);
+  const onAck = (d: unknown) => send("kiosk_ack", d);
+  const onError = (d: unknown) => send("kiosk_error", d);
+
+  kioskEventBus.on("kiosk_status", onStatus);
+  kioskEventBus.on("kiosk_online", onOnline);
+  kioskEventBus.on("kiosk_ack", onAck);
+  kioskEventBus.on("kiosk_error", onError);
+
+  // Heartbeat keeps the connection alive through proxies/load balancers
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(":ping\n\n");
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 25_000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    kioskEventBus.off("kiosk_status", onStatus);
+    kioskEventBus.off("kiosk_online", onOnline);
+    kioskEventBus.off("kiosk_ack", onAck);
+    kioskEventBus.off("kiosk_error", onError);
+    logger.info(`SSE client disconnected: ${req.user?.email ?? "unknown"}`);
+  });
 };
 
 export const listKiosks = async (

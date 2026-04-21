@@ -12,6 +12,7 @@ import routes from "./routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { rateLimiter } from "./middleware/rateLimiter";
 import prisma from "./config/database";
+import kioskEventBus from "./utils/kioskEventBus";
 
 const app: Application = express();
 const httpServer = createServer(app);
@@ -40,7 +41,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
-app.use(rateLimiter);
+// Admin routes are protected by JWT + requireAdmin — skip rate limiter for them
+app.use((req, res, next) => {
+  if (req.path.startsWith(`/api/${env.API_VERSION}/admin`)) return next();
+  return rateLimiter(req, res, next);
+});
 
 // Expose io to controllers
 app.set("io", io);
@@ -177,9 +182,18 @@ io.on("connection", (socket: Socket) => {
       locker_count: number;
       version: string;
     }) => {
-      const { kiosk_id } = data;
+      const { kiosk_id, locker_count, version } = data;
       socket.join(`kiosk:${kiosk_id}`);
-      logger.info(`Kiosk registered: ${kiosk_id} (socket ${socket.id})`);
+
+      logger.info(
+        `\n┌─────────────────────────────────────────────\n` +
+        `│  🟢 [PI-ONLINE]  Kiosk registered\n` +
+        `│  Kiosk ID : ${kiosk_id}\n` +
+        `│  Socket   : ${socket.id}\n` +
+        `│  Lockers  : ${locker_count ?? "?"}\n` +
+        `│  Version  : ${version ?? "?"}\n` +
+        `└─────────────────────────────────────────────`
+      );
 
       // Push stored config to Pi immediately
       try {
@@ -188,6 +202,7 @@ io.on("connection", (socket: Socket) => {
         });
         if (record?.config) {
           socket.emit("kiosk:config", record.config);
+          logger.info(`  📤 [PI-CONFIG]  Pushed stored config to ${kiosk_id}`);
         }
       } catch (err) {
         logger.error(`Failed to push config to kiosk ${kiosk_id}:`, err);
@@ -195,14 +210,58 @@ io.on("connection", (socket: Socket) => {
 
       // Broadcast online status to admin
       io.emit("admin:kiosk_online", { kiosk_id, socket_id: socket.id });
+      kioskEventBus.emit("kiosk_online", { kiosk_id, socket_id: socket.id, ts: Date.now() });
+    },
+  );
+
+  // ── Kiosk ACK — Pi confirms it received and executed a command
+  socket.on(
+    "kiosk:ack",
+    (data: {
+      kiosk_id: string;
+      command_id: string;
+      action: string;
+      status: "ok" | "error";
+      message?: string;
+    }) => {
+      const { kiosk_id, command_id, action, status, message } = data;
+      if (status === "ok") {
+        logger.info(
+          `\n┌─────────────────────────────────────────────\n` +
+          `│  ✅ [PI-ACK]  Command confirmed by Pi\n` +
+          `│  Kiosk     : ${kiosk_id}\n` +
+          `│  Command ID: ${command_id}\n` +
+          `│  Action    : ${action}\n` +
+          `│  Status    : OK\n` +
+          `└─────────────────────────────────────────────`
+        );
+      } else {
+        logger.warn(
+          `\n┌─────────────────────────────────────────────\n` +
+          `│  ⚠️  [PI-ACK]  Command FAILED on Pi\n` +
+          `│  Kiosk     : ${kiosk_id}\n` +
+          `│  Command ID: ${command_id}\n` +
+          `│  Action    : ${action}\n` +
+          `│  Error     : ${message ?? "unknown"}\n` +
+          `└─────────────────────────────────────────────`
+        );
+      }
+      io.emit("admin:kiosk_ack", data);
+      kioskEventBus.emit("kiosk_ack", { ...data, ts: Date.now() });
     },
   );
 
   // ── Kiosk status update
   socket.on("kiosk:status", (data: unknown) => {
-    logger.debug("kiosk:status received", data);
-    // Broadcast to admin dashboard
+    const d = data as Record<string, unknown>;
+    logger.info(
+      `  📡 [PI-STATUS]  kiosk=${d?.kiosk_id ?? "?"} ` +
+      `temp=${d?.cpu_temp ?? "?"}°C ` +
+      `uptime=${d?.uptime_seconds ?? "?"}s ` +
+      `lockers=${JSON.stringify(d?.lockers ?? {})}`
+    );
     io.emit("admin:kiosk_status", data);
+    kioskEventBus.emit("kiosk_status", { ...d, ts: Date.now() });
   });
 
   // ── Kiosk images — Pi finished capturing, URLs come back here
@@ -223,7 +282,13 @@ io.on("connection", (socket: Socket) => {
       }
 
       logger.info(
-        `kiosk:images for rental ${rental_id}: ${image_urls.length} images`,
+        `\n┌─────────────────────────────────────────────\n` +
+        `│  📸 [PI-IMAGES]  Kiosk sent captured images\n` +
+        `│  Kiosk    : ${data.kiosk_id}\n` +
+        `│  Rental   : ${rental_id}\n` +
+        `│  Locker   : ${locker_id}\n` +
+        `│  Images   : ${image_urls.length} file(s)\n` +
+        `└─────────────────────────────────────────────`
       );
 
       try {
@@ -597,7 +662,15 @@ io.on("connection", (socket: Socket) => {
       const { rental_id, user_id, detected, verified, confidence } = data;
 
       logger.info(
-        `kiosk:face rental=${rental_id} detected=${detected} verified=${verified} conf=${confidence}`,
+        `\n┌─────────────────────────────────────────────\n` +
+        `│  👤 [PI-FACE]  Face verification result\n` +
+        `│  Kiosk      : ${data.kiosk_id}\n` +
+        `│  Rental     : ${rental_id}\n` +
+        `│  User       : ${user_id ?? "?"}\n` +
+        `│  Detected   : ${detected}\n` +
+        `│  Verified   : ${verified}\n` +
+        `│  Confidence : ${(confidence * 100).toFixed(1)}%\n` +
+        `└─────────────────────────────────────────────`
       );
 
       if (!rental_id) return;
@@ -680,12 +753,20 @@ io.on("connection", (socket: Socket) => {
 
   // ── Kiosk error passthrough
   socket.on("kiosk:error", (data: unknown) => {
-    logger.warn("kiosk:error received:", data);
+    const d = data as Record<string, unknown>;
+    logger.warn(
+      `\n┌─────────────────────────────────────────────\n` +
+      `│  ❌ [PI-ERROR]  Kiosk reported an error\n` +
+      `│  Kiosk  : ${d?.kiosk_id ?? "?"}\n` +
+      `│  Error  : ${d?.message ?? JSON.stringify(data)}\n` +
+      `└─────────────────────────────────────────────`
+    );
     io.emit("admin:kiosk_error", data);
+    kioskEventBus.emit("kiosk_error", { ...d, ts: Date.now() });
   });
 
   socket.on("disconnect", () => {
-    logger.info(`Socket disconnected: ${socket.id}`);
+    logger.info(`🔴 [PI-OFFLINE]  Socket disconnected: ${socket.id}`);
   });
 });
 
