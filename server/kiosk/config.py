@@ -15,24 +15,24 @@ CONFIG_FILE = BASE_DIR / "kiosk_config.json"
 def _detect_gpio_chip() -> int:
     """
     Find the gpiochip that owns the 40-pin header GPIOs.
-    On Pi 5 the RP1 chip label is 'pinctrl-rp1'.
-    Falls back to the first openable chip (usually 0).
+    On Pi 5 the RP1 chip label is 'pinctrl-rp1' and is always gpiochip0.
+    Searches all chips by label before falling back to first openable chip.
     """
     try:
         import lgpio
-        # First pass: find the chip whose label contains 'rp1' or 'pinctrl'
-        for chip in range(8):
+        # Find the chip labelled 'pinctrl-rp1' (Pi 5 GPIO header chip)
+        for chip in range(16):
             try:
                 h = lgpio.gpiochip_open(chip)
                 info = lgpio.gpio_get_chip_info(h)
                 lgpio.gpiochip_close(h)
                 label = str(info).lower()
-                if "rp1" in label or "pinctrl" in label:
+                if "rp1" in label or "pinctrl-rp1" in label:
                     return chip
             except Exception:
                 continue
-        # Second pass: return the first chip that opens successfully
-        for chip in range(8):
+        # Fallback: first openable chip
+        for chip in range(16):
             try:
                 h = lgpio.gpiochip_open(chip)
                 lgpio.gpiochip_close(h)

@@ -68,6 +68,11 @@ systemctl start  NetworkManager 2>/dev/null || true
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. CRITICAL — Disable camera_auto_detect (kernel claims GPIO4 otherwise)
 # ══════════════════════════════════════════════════════════════════════════════
+step "Stopping lgd daemon (pre-claims all GPIO pins, blocks our relay code)"
+systemctl stop    lgd 2>/dev/null && echo "  ✓ lgd stopped"    || echo "  lgd not running"
+systemctl disable lgd 2>/dev/null && echo "  ✓ lgd disabled"   || echo "  lgd already disabled"
+killall lgd       2>/dev/null || true
+
 step "Disabling conflicting kernel interfaces (I2C / SPI / UART)"
 # BCM 2,3  are I2C SDA/SCL  → claimed when I2C is enabled
 # BCM 8-11 are SPI pins     → claimed when SPI is enabled
