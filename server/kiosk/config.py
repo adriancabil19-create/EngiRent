@@ -63,7 +63,7 @@ LOCKER_PINS = {
         "bottom_door_pin":     6,   # BCM 6 / Four-channel relay → Bottom door solenoid
         "actuator_extend_pin": 10,  # BCM 10 / Four-channel relay → Actuator extend
         "actuator_retract_pin":11,  # BCM 11 / Four-channel relay → Actuator retract
-        "camera_type": "csi",
+        "camera_type": "usb",
         "camera_index": 0,
     },
     2: {
@@ -71,7 +71,7 @@ LOCKER_PINS = {
         "bottom_door_pin":     7,   # BCM 7 / Four-channel relay → Bottom door solenoid
         "actuator_extend_pin": 12,  # BCM 12 / Four-channel relay → Actuator extend
         "actuator_retract_pin":13,  # BCM 13 / Four-channel relay → Actuator retract
-        "camera_type": "csi",
+        "camera_type": "usb",
         "camera_index": 1,
     },
     3: {
@@ -80,7 +80,7 @@ LOCKER_PINS = {
         "actuator_extend_pin": 14,  # BCM 14 / Single-channel relay → Actuator extend
         "actuator_retract_pin":15,  # BCM 15 / Single-channel relay → Actuator retract
         "camera_type": "usb",
-        "camera_index": 0,
+        "camera_index": 2,
     },
     4: {
         "main_door_pin":       5,   # BCM 5 / Four-channel relay → Main door solenoid
@@ -88,11 +88,11 @@ LOCKER_PINS = {
         "actuator_extend_pin": 16,  # BCM 16 / Single-channel relay → Actuator extend
         "actuator_retract_pin":17,  # BCM 17 / Single-channel relay → Actuator retract
         "camera_type": "usb",
-        "camera_index": 1,
+        "camera_index": 3,
     },
 }
 
-FACE_CAMERA_INDEX = 2   # USB port 3/Hub → /dev/video6 or similar
+FACE_CAMERA_INDEX = 4   # 5th USB camera → /dev/video8 (index into USB_DEVICE_MAP)
 
 
 def load_timing_config() -> dict:
