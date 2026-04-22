@@ -7,12 +7,13 @@ Complete guide to understanding and setting up the EngiRent kiosk codebase on Ra
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
-2. [Directory Structure](#directory-structure)
-3. [Module Breakdown](#module-breakdown)
-4. [Setup Instructions](#setup-instructions)
-5. [Running the Kiosk](#running-the-kiosk)
-6. [Development Workflow](#development-workflow)
-7. [Troubleshooting](#troubleshooting)
+2. [Hardware Reference](#hardware-reference)
+3. [Directory Structure](#directory-structure)
+4. [Module Breakdown](#module-breakdown)
+5. [Setup Instructions](#setup-instructions)
+6. [Running the Kiosk](#running-the-kiosk)
+7. [Development Workflow](#development-workflow)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -20,13 +21,61 @@ Complete guide to understanding and setting up the EngiRent kiosk codebase on Ra
 
 The EngiRent kiosk is a **Raspberry Pi 5-based IoT device** that manages 4 hardware-controlled lockers. It handles:
 
-- **GPIO Control** – Relay boards for solenoid locks
-- **Motor Control** – H-bridge drivers for linear actuators
-- **Camera Management** – CSI cameras + USB webcams for image capture & face recognition
+- **GPIO Control** – 3× 4-channel relay boards + 4× single-channel relay boards for solenoid locks and linear actuators
+- **Camera Management** – 5× USB cameras via GStreamer MJPEG pipeline (4 locker cams + 1 face cam)
 - **Local UI** – Flask-based web interface for touchscreen display
 - **Real-time Communication** – Socket.io client connecting to Node.js backend
 - **WiFi Provisioning** – AP (Access Point) mode for first-time network setup
 - **Image Upload** – Supabase integration for storing captured images
+- **Face Verification** – ML service for renter identity check
+
+---
+
+## Hardware Reference
+
+### Relay Wiring (BCM Pin Map)
+
+Each locker has a **main door** (solenoid), **bottom door** (solenoid), and a **linear actuator** (extend + retract).
+
+| Relay Module | Channel | BCM Pin | Function |
+|---|---|---|---|
+| Module 1 (4-ch SRD-05VDC) | CH1 | BCM 2 | Locker 1 – Main door solenoid |
+| Module 1 (4-ch SRD-05VDC) | CH2 | BCM 3 | Locker 2 – Main door solenoid |
+| Module 1 (4-ch SRD-05VDC) | CH3 | BCM 4 | Locker 3 – Main door solenoid |
+| Module 1 (4-ch SRD-05VDC) | CH4 | BCM 5 | Locker 4 – Main door solenoid |
+| Module 2 (4-ch SRD-05VDC) | CH1 | BCM 6 | Locker 1 – Bottom door solenoid |
+| Module 2 (4-ch SRD-05VDC) | CH2 | BCM 7 | Locker 2 – Bottom door solenoid |
+| Module 2 (4-ch SRD-05VDC) | CH3 | BCM 8 | Locker 3 – Bottom door solenoid |
+| Module 2 (4-ch SRD-05VDC) | CH4 | BCM 9 | Locker 4 – Bottom door solenoid |
+| Module 3 (4-ch SRD-05VDC) | CH1 | BCM 10 | Locker 1 – Actuator EXTEND |
+| Module 3 (4-ch SRD-05VDC) | CH2 | BCM 11 | Locker 1 – Actuator RETRACT |
+| Module 3 (4-ch SRD-05VDC) | CH3 | BCM 12 | Locker 2 – Actuator EXTEND |
+| Module 3 (4-ch SRD-05VDC) | CH4 | BCM 13 | Locker 2 – Actuator RETRACT |
+| Module 4 (1-ch SRD-12VDC) | – | BCM 14 | Locker 3 – Actuator EXTEND |
+| Module 4 (1-ch SRD-12VDC) | – | BCM 15 | Locker 3 – Actuator RETRACT |
+| Module 4 (1-ch SRD-12VDC) | – | BCM 16 | Locker 4 – Actuator EXTEND |
+| Module 4 (1-ch SRD-12VDC) | – | BCM 17 | Locker 4 – Actuator RETRACT |
+
+> All relay modules are **active-LOW** (signal LOW = relay ON). Set `RELAY_ACTIVE_LEVEL=active_low` in `.env`.
+
+### USB Camera Map
+
+All 5 cameras are USB. Each USB camera exposes **two V4L2 nodes** — always use the first (lower-numbered) node.
+
+| Camera | V4L2 Device | Role |
+|---|---|---|
+| USB cam 0 | `/dev/video0` | Locker 1 interior |
+| USB cam 1 | `/dev/video2` | Locker 2 interior |
+| USB cam 2 | `/dev/video4` | Locker 3 interior |
+| USB cam 3 | `/dev/video7` | Locker 4 interior |
+| USB cam 4 | `/dev/video10` | Face verification |
+
+> Run `v4l2-ctl --list-devices` to verify device nodes after reboot or replug. Update `USB_DEVICE_MAP` in `hardware/camera_manager.py` if nodes differ.
+
+**Test a specific camera:**
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video0 -frames:v 1 /tmp/cam0.jpg -y
+```
 
 ---
 
@@ -35,28 +84,28 @@ The EngiRent kiosk is a **Raspberry Pi 5-based IoT device** that manages 4 hardw
 ```
 kiosk/
 ├── main.py                          # Entry point – orchestrates startup sequence
-├── config.py                        # Configuration loader
+├── config.py                        # Configuration loader & GPIO pin map
 ├── diagnose.py                      # Hardware diagnostics utility
-├── kiosk_config.json               # Locker timing & behavior config
+├── kiosk_config.json               # Locker timing & behavior config (seconds)
 ├── .env.example                     # Environment variable template
 ├── requirements.txt                 # Python dependencies
 ├── SETUP.md                         # Hardware setup instructions
 ├── setup.sh / setup.bat             # Installation scripts
 │
-├── hardware/                        # GPIO & actuator control
-│   ├── gpio_controller.py           # Low-level GPIO via lgpio
-│   ├── actuator_controller.py       # Linear actuator PWM control
-│   ├── camera_manager.py            # CSI + USB camera initialization
+├── hardware/                        # GPIO & camera control
+│   ├── gpio_controller.py           # Solenoid relay control via lgpio
+│   ├── actuator_controller.py       # Linear actuator relay control
+│   ├── camera_manager.py            # 5× USB cameras via GStreamer MJPEG
 │   └── __init__.py
 │
 ├── kiosk_ui/                        # Local Flask web server
-│   ├── server.py                    # Flask app & Socket.io handler
+│   ├── server.py                    # Flask app & status endpoints
 │   ├── static/                      # Frontend assets (CSS, JS, images)
 │   ├── templates/                   # HTML templates (touchscreen UI)
 │   └── __init__.py
 │
 ├── services/                        # Background services
-│   ├── socket_client.py             # Socket.io client (Backend comms)
+│   ├── socket_client.py             # Socket.io client (backend comms)
 │   ├── face_service.py              # Face detection & recognition
 │   ├── image_uploader.py            # Upload images to Supabase
 │   └── __init__.py
@@ -83,7 +132,7 @@ Orchestrates the startup sequence:
 1. **Logging Setup** – Initialize colored terminal + file logging
 2. **Environment Loading** – Load `.env` variables
 3. **WiFi Check** – If no WiFi, enter AP provisioning mode (blocks)
-4. **Hardware Init** – Initialize GPIO, cameras, relay boards
+4. **Hardware Init** – Initialize GPIO (lgpio), cameras (GStreamer), relay boards
 5. **UI Server** – Start Flask web server (daemon thread)
 6. **Socket.io Loop** – Connect to backend and wait for commands (blocks forever)
 
@@ -91,116 +140,113 @@ Orchestrates the startup sequence:
 
 ---
 
-### **hardware/** – GPIO & Motor Control
+### **config.py** – Configuration Manager
+
+Loads settings from `.env` and `kiosk_config.json`.
+
+**Key Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `KIOSK_ID` | Unique identifier (e.g. `kiosk-1`) |
+| `SERVER_URL` | Backend Socket.io endpoint |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Storage credentials |
+| `ML_SERVICE_URL` | Face recognition service |
+| `RELAY_ACTIVE_LOW` | `True` for active-LOW relay modules |
+| `MOCK_GPIO` | `True` to skip real GPIO (testing on non-Pi) |
+| `MOCK_CAMERA` | `True` to return placeholder images |
+| `GPIO_CHIP` | Auto-detected (0 or 4) for Pi 5 RP1 chip |
+
+**`LOCKER_PINS` in `config.py`** (source of truth for wiring):
+
+```python
+LOCKER_PINS = {
+    1: { "main_door_pin": 2,  "bottom_door_pin": 6,  "actuator_extend_pin": 10, "actuator_retract_pin": 11, "camera_index": 0 },
+    2: { "main_door_pin": 3,  "bottom_door_pin": 7,  "actuator_extend_pin": 12, "actuator_retract_pin": 13, "camera_index": 1 },
+    3: { "main_door_pin": 4,  "bottom_door_pin": 8,  "actuator_extend_pin": 14, "actuator_retract_pin": 15, "camera_index": 2 },
+    4: { "main_door_pin": 5,  "bottom_door_pin": 9,  "actuator_extend_pin": 16, "actuator_retract_pin": 17, "camera_index": 3 },
+}
+FACE_CAMERA_INDEX = 4
+```
+
+> **Never override `LOCKER_PINS` from the admin panel.** The server's `kiosk:config` event only updates timing values — pin wiring stays local.
+
+---
+
+### **hardware/** – GPIO & Camera Control
 
 #### `gpio_controller.py`
-- **Purpose:** Low-level GPIO control using `lgpio` (RP1 chip support)
-- **Key Functions:**
-  - `setup_gpio()` – Initialize relay pins
-  - `activate_relay()` / `deactivate_relay()` – Control solenoid locks
-  - `read_sensor()` – Read status sensors
+- Controls solenoid locks via active-LOW relay modules
+- Uses `lgpio` for Pi 5 RP1 chip compatibility
+- GPIO chip auto-detected at startup (`GPIO_CHIP` in `config.py`)
+- Key method: `SolenoidController.unlock_for(locker_id, door, duration_seconds)`
 
 #### `actuator_controller.py`
-- **Purpose:** Control linear actuators via PWM (H-bridge motor drivers)
-- **Key Functions:**
-  - `extend_actuator()` – Push out trapdoor
-  - `retract_actuator()` – Pull back trapdoor
-  - Timing & speed control from `kiosk_config.json`
+- Controls linear actuators via ON/OFF relay pairs (extend + retract)
+- Place sequence: extend (push item in) → retract (return platform)
+- Key method: `ActuatorController.place_item(locker_id, extend_s, retract_s)`
 
 #### `camera_manager.py`
-- **Purpose:** Manage CSI (Pi Camera) and USB webcams
-- **Key Functions:**
-  - `initialize_cameras()` – Detect & initialize all camera inputs
-  - `capture_image()` – Snapshot from specific camera
-  - Uses `picamera2` (CSI) + `OpenCV` (USB)
+- **All 5 cameras are USB** — no CSI/picamera2
+- Opens cameras via **GStreamer MJPEG pipeline** (low CPU, 30fps)
+- Fallback to YUYV 640×480 if MJPEG pipeline fails
+- Locker cameras: 1280×720 MJPEG | Face camera: 640×480 MJPEG
+- Device node map defined in `USB_DEVICE_MAP` (update after hardware changes)
 
 ---
 
-### **kiosk_ui/** – Touchscreen Interface
+### **services/socket_client.py** – Backend Communication
 
-#### `server.py`
-- **Purpose:** Flask web server + Socket.io handler for real-time comms
-- **Endpoints:**
-  - `GET /` – Main touchscreen UI
-  - `POST /api/unlock` – Trigger locker unlock (from UI touch buttons)
-  - `GET /api/status` – Get locker & hardware status
-  - `Socket.io Events` – Receive commands from backend
-- **Runs on:** `http://localhost:8080` (configured in `.env`)
+Persistent Socket.io connection to Node.js backend.
+
+**Events emitted TO server:**
+
+| Event | Payload | When |
+|---|---|---|
+| `kiosk:register` | `{kiosk_id, locker_count, version}` | On connect |
+| `kiosk:status` | `{kiosk_id, ui_state, config}` | After each command |
+| `kiosk:images` | `{kiosk_id, locker_id, image_urls, rental_id}` | After capture_image |
+| `kiosk:face` | `{detected, verified, confidence, ...}` | After capture_face |
+| `kiosk:ack` | `{command_id, action, status: "ok"\|"error"}` | After every command |
+| `kiosk:log` | `{level, module, message}` | All INFO+ log lines |
+
+**Events received FROM server:**
+
+| Event | Actions supported |
+|---|---|
+| `kiosk:command` | `open_door`, `drop_item`, `capture_image`, `capture_face`, `lock_all`, `actuator_extend`, `actuator_retract` |
+| `kiosk:config` | Timing update (seconds) — pin wiring is **ignored** from server |
+
+**Config update behaviour:** The server sends `kiosk:config` on every kiosk connect. The handler only saves `lockers`-format timing data and ignores `solenoid_pins`, `actuator_pins`, and `camera_indices` — the Pi's local `config.py` is always the source of truth for wiring.
 
 ---
 
-### **services/** – Background Services
+### **kiosk_ui/server.py** – Touchscreen Interface
 
-#### `socket_client.py`
-- **Purpose:** Persistent Socket.io connection to Node.js backend
-- **Responsibilities:**
-  - Auto-reconnect with exponential backoff
-  - Listen for `unlock_locker` / `lock_locker` commands
-  - Emit `locker_status` / `image_captured` events
-  - Handle heartbeat / keep-alive
+Flask server running on `http://localhost:8080`.
 
-#### `face_service.py`
-- **Purpose:** Face detection & recognition
-- **Key Functions:**
-  - Load pre-trained models (OpenCV + optional ML API)
-  - Process camera frames for face detection
-  - Send detected faces to backend ML service
-
-#### `image_uploader.py`
-- **Purpose:** Upload captured images to Supabase storage
-- **Key Functions:**
-  - Queue images for upload
-  - Handle retries on failure
-  - Associate images with locker ID & timestamp
+- `GET /` – Main touchscreen UI
+- `GET /api/status` – Current locker/hardware state (used by UI polling)
 
 ---
 
 ### **provisioning/** – WiFi Setup
 
-#### `ap_portal.py`
-- **Purpose:** Flask AP (Access Point) portal for WiFi provisioning
-- **Trigger:** Runs if no WiFi detected on startup
-- **Flow:**
-  1. Pi creates its own WiFi network (`engirent-setup`)
-  2. User connects from phone/laptop
-  3. User selects home WiFi + enters password
-  4. Pi connects and reboots
-
-#### `wifi_manager.py`
-- **Purpose:** Wrapper around `NetworkManager` (nmcli)
-- **Key Functions:**
-  - `scan_networks()` – List available WiFi networks
-  - `connect()` – Connect to network with SSID/password
-  - `get_status()` – Check connection state
-
----
-
-### **config.py** – Configuration Manager
-
-Loads and validates settings from:
-- `.env` file (environment variables)
-- `kiosk_config.json` (locker timings)
-
-**Key Variables:**
-- `KIOSK_ID` – Unique identifier (e.g., `kiosk-1`)
-- `SERVER_URL` – Backend API endpoint
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` – Database access
-- `UI_PORT` – Flask server port
-- `RELAY_ACTIVE_LEVEL` – Relay activation logic (0=active-LOW, 1=active-HIGH)
+If no WiFi on startup, the Pi enters AP mode:
+1. Pi creates `EngiRent-Kiosk-Setup` network (password: configured in `.env`)
+2. User connects from phone/laptop and opens `http://192.168.4.1`
+3. User selects home WiFi + enters password
+4. Pi connects and resumes
 
 ---
 
 ### **diagnose.py** – Hardware Diagnostics
 
-**Run:** `python3 diagnose.py`
+```bash
+python3 diagnose.py
+```
 
-Tests:
-- GPIO pin connectivity
-- Camera detection (CSI + USB)
-- Relay board response
-- Motor actuator operation
-- Network connectivity
-- Supabase connectivity
+Tests GPIO, cameras, relay boards, actuators, network, and Supabase connectivity.
 
 ---
 
@@ -208,12 +254,34 @@ Tests:
 
 ### **1. Prerequisites**
 
-Ensure you've completed the hardware setup in [SETUP.md](./SETUP.md):
-- OS flashed (Raspberry Pi OS Trixie)
-- System dependencies installed (`lgpio`, `picamera2`, etc.)
+Complete the hardware setup in [SETUP.md](./SETUP.md):
+- Raspberry Pi OS Trixie flashed
+- `lgpio`, `opencv`, `gstreamer` system packages installed
 - Wired ethernet or temporary WiFi for initial setup
 
-### **2. Clone Repository**
+### **2. CRITICAL — Disable Camera Auto-Detect**
+
+The kernel's camera auto-detect claims GPIO4, which prevents the kiosk from opening Locker 3's main door. **Must be done before first boot:**
+
+```bash
+sudo nano /boot/firmware/config.txt
+```
+
+Find and change:
+```
+camera_auto_detect=1
+```
+to:
+```
+camera_auto_detect=0
+```
+
+Then reboot:
+```bash
+sudo reboot
+```
+
+### **3. Clone Repository**
 
 ```bash
 cd ~
@@ -221,22 +289,22 @@ git clone https://github.com/Shaloh69/EngiRent.git engirent
 cd engirent/server/kiosk
 ```
 
-### **3. Create Virtual Environment**
+### **4. Create Virtual Environment**
 
 ```bash
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
 ```
 
-> Use `--system-site-packages` to inherit system-installed `lgpio`, `picamera2`, and `opencv`.
+> `--system-site-packages` inherits system-installed `lgpio`, `opencv`, and `gstreamer` Python bindings.
 
-### **4. Install Dependencies**
+### **5. Install Dependencies**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### **5. Configure Environment**
+### **6. Configure Environment**
 
 ```bash
 cp .env.example .env
@@ -248,16 +316,45 @@ nano .env
 | Variable | Example | Description |
 |----------|---------|-------------|
 | `KIOSK_ID` | `kiosk-1` | Unique identifier |
-| `SERVER_URL` | `https://api.engirent.com` | Backend API |
-| `SUPABASE_URL` | `https://xxx.supabase.co` | Database |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ0...` | DB auth token |
-| `ML_SERVICE_URL` | `https://ml.engirent.com` | Face recognition |
-| `UI_PORT` | `8080` | Web server port |
-| `RELAY_ACTIVE_LEVEL` | `0` | Relay logic (0 or 1) |
+| `SERVER_URL` | `https://api.engirent.com` | Backend Socket.io URL |
+| `SUPABASE_URL` | `https://xxx.supabase.co` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ0...` | Supabase service role key |
+| `ML_SERVICE_URL` | `https://ml.engirent.com` | Face recognition service |
+| `UI_PORT` | `8080` | Flask UI port |
+| `RELAY_ACTIVE_LEVEL` | `active_low` | Relay logic (`active_low` or `active_high`) |
+| `MOCK_GPIO` | `False` | Set `True` for testing without hardware |
+| `MOCK_CAMERA` | `False` | Set `True` for testing without cameras |
 
-### **6. Configure Locker Behavior**
+### **7. Verify Camera Devices**
 
-Edit `kiosk_config.json` to set locker timings:
+Identify which camera is which locker:
+
+```bash
+v4l2-ctl --list-devices
+```
+
+Expected output (even-numbered nodes are capture devices):
+```
+USB Camera (usb-xhci-hcd.1-1.1):
+    /dev/video0   ← Locker 1
+    /dev/video1
+
+USB Camera (usb-xhci-hcd.1-1.2):
+    /dev/video2   ← Locker 2
+    /dev/video3
+...
+```
+
+Test each camera with ffmpeg and confirm which locker it shows:
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video0 -frames:v 1 /tmp/cam0.jpg -y
+```
+
+Update `USB_DEVICE_MAP` in `hardware/camera_manager.py` if your device nodes differ.
+
+### **8. Configure Locker Timing**
+
+`kiosk_config.json` controls how long doors stay open and actuator travel times (in seconds):
 
 ```json
 {
@@ -268,18 +365,28 @@ Edit `kiosk_config.json` to set locker timings:
       "actuator_extend_seconds": 5,
       "actuator_retract_seconds": 5,
       "actuator_speed_percent": 100
-    }
+    },
+    "2": { ... },
+    "3": { ... },
+    "4": { ... }
+  },
+  "face_recognition": {
+    "confidence_threshold": 0.6,
+    "capture_attempts": 3,
+    "capture_timeout_seconds": 30
   }
 }
 ```
 
-### **7. Test Hardware**
+> These timings can also be updated remotely from the admin panel via `kiosk:config`.
+
+### **9. Test Hardware**
 
 ```bash
 python3 diagnose.py
 ```
 
-Verify all hardware is detected and responsive.
+Verify all GPIO pins and cameras respond correctly before enabling autostart.
 
 ---
 
@@ -292,15 +399,19 @@ source venv/bin/activate
 python3 main.py
 ```
 
-**Expected Output:**
+**Expected startup log:**
 ```
-[INFO] kiosk.main – Checking WiFi...
-[INFO] kiosk.main – WiFi connected: home-network
-[INFO] kiosk.gpio – Initializing GPIO (RP1)...
-[INFO] kiosk.camera – Detected 4 camera inputs
-[INFO] kiosk.kiosk_ui – Flask server started on 0.0.0.0:8080
-[INFO] kiosk.socket – Connecting to https://api.engirent.com...
-[INFO] kiosk.socket – Connected! Listening for commands...
+[INFO]  kiosk.main    – Checking WiFi...
+[INFO]  kiosk.main    – WiFi connected
+[INFO]  kiosk.gpio    – GPIO chip detected: gpiochip0
+[INFO]  kiosk.camera  – Locker camera locker=1 device=/dev/video0 ✓
+[INFO]  kiosk.camera  – Locker camera locker=2 device=/dev/video2 ✓
+[INFO]  kiosk.camera  – Locker camera locker=3 device=/dev/video4 ✓
+[INFO]  kiosk.camera  – Locker camera locker=4 device=/dev/video7 ✓
+[INFO]  kiosk.camera  – Face camera device=/dev/video10 ✓
+[INFO]  kiosk.ui      – Flask server started on 0.0.0.0:8080
+[INFO]  kiosk.socket  – Connecting to https://api.engirent.com ...
+[INFO]  kiosk.socket  – Connected to server ✓
 ```
 
 ### **Autostart on Boot (Systemd)**
@@ -312,226 +423,211 @@ sudo systemctl enable engirent-kiosk.service
 sudo systemctl start engirent-kiosk.service
 ```
 
-**Check Status:**
+**Check status:**
 ```bash
 sudo systemctl status engirent-kiosk.service
-sudo journalctl -u engirent-kiosk.service -f  # Live logs
+sudo journalctl -u engirent-kiosk.service -f   # Live log stream
 ```
 
-### **Stop the Service**
-
+**Stop/restart:**
 ```bash
 sudo systemctl stop engirent-kiosk.service
+sudo systemctl restart engirent-kiosk.service
 ```
 
 ---
 
 ## Development Workflow
 
-### **Setup Dev Environment**
+### **Mock Mode (No Hardware)**
 
-```bash
-cd ~/engirent/server/kiosk
-source venv/bin/activate
+Set in `.env` to test on a non-Pi machine:
+```
+MOCK_GPIO=True
+MOCK_CAMERA=True
 ```
 
-### **Running in Debug Mode**
+GPIO calls are no-ops; cameras return grey placeholder images.
 
-Edit `main.py` and set logging level:
-```python
-logging.basicConfig(level=logging.DEBUG)
-```
+### **Pull Latest Code to Pi**
 
-Then run:
 ```bash
-python3 main.py
+cd ~/engirent
+git pull
+sudo systemctl restart engirent-kiosk.service
+sudo journalctl -u engirent-kiosk.service -f
 ```
 
 ### **Testing Individual Modules**
 
-**Test GPIO:**
 ```bash
-python3 -c "from hardware.gpio_controller import *; test_relay(1)"
+# Test GPIO directly
+python3 -c "
+from config import LOCKER_PINS
+from hardware.gpio_controller import SolenoidController
+import asyncio
+s = SolenoidController()
+asyncio.run(s.unlock_for(1, 'main_door', 3))
+"
+
+# Test a single camera
+python3 -c "
+from hardware.camera_manager import CameraManager
+cam = CameraManager()
+frames = cam.capture_locker(1, num_frames=1)
+open('/tmp/test.jpg', 'wb').write(frames[0])
+print('Saved /tmp/test.jpg')
+"
+
+# Test face camera
+python3 -c "
+from hardware.camera_manager import CameraManager
+cam = CameraManager()
+frames = cam.capture_face(num_frames=1)
+open('/tmp/face.jpg', 'wb').write(frames[0])
+print('Saved /tmp/face.jpg')
+"
 ```
-
-**Test Camera:**
-```bash
-python3 -c "from hardware.camera_manager import *; initialize_cameras(); capture_image(1)"
-```
-
-**Test Backend Connection:**
-```bash
-python3 -c "from services.socket_client import *; asyncio.run(connect())"
-```
-
-### **Hot Reload for Frontend**
-
-The Flask UI server watches `kiosk_ui/static/` and `kiosk_ui/templates/` for changes.
-Edit HTML/CSS and refresh the browser—no restart needed.
 
 ### **Logs Location**
 
-- **Terminal Output:** Live colorized logs
-- **File Logs:** `~/engirent/server/kiosk/data/kiosk.log`
+- **Live:** `sudo journalctl -u engirent-kiosk.service -f`
+- **File:** `~/engirent/server/kiosk/data/kiosk.log`
+- **Pi logs forwarded to server:** visible in Render/backend logs via `kiosk:log` events
 
 ---
 
 ## Troubleshooting
 
-### **WiFi Not Detected on Startup**
+### **Service Crashes Immediately (exit code 1)**
 
-**Symptom:** Pi enters AP mode, won't connect to home network.
+**Most common cause:** `camera_auto_detect=1` in `/boot/firmware/config.txt` claims GPIO4, blocking Locker 3 main door.
 
-**Solution:**
-1. Connect to `engirent-setup` network from phone
-2. Open `http://192.168.4.1` in browser
-3. Scan & select home WiFi
-4. Enter password (exact case-sensitive)
-5. Wait for reboot
-
-If still failing:
+**Fix:**
 ```bash
-sudo nmtui  # NetworkManager TUI – manual config
+sudo nano /boot/firmware/config.txt
+# Set: camera_auto_detect=0
+sudo reboot
+```
+
+**Diagnose:**
+```bash
+sudo journalctl -u engirent-kiosk.service -n 50
+# Look for: "lgpio.error: 'GPIO busy'"
 ```
 
 ---
 
-### **GPIO Not Responding**
+### **GPIO Busy Error**
 
-**Symptom:** Relays don't activate, actuators don't move.
+**Symptom:** `lgpio.error: GPIO busy` on a specific pin.
 
-**Diagnosis:**
-```bash
-python3 diagnose.py
-# Look for GPIO errors
-```
+**Common causes and fixes:**
 
-**Check lgpio:**
-```bash
-python3 -c "import lgpio; print(lgpio.__version__)"
-```
-
-**Verify Wiring:**
-- Check GPIO pin numbers match `hardware/gpio_controller.py`
-- Verify power supply connections (12V solenoids, 5V Pi)
-- Test relay module directly with multimeter
+| Cause | Fix |
+|---|---|
+| `camera_auto_detect=1` claiming GPIO4 | Set `camera_auto_detect=0` in `/boot/firmware/config.txt`, reboot |
+| Wrong GPIO chip for Pi 5 | `GPIO_CHIP` is auto-detected — check `config.py` `_detect_gpio_chip()` output |
+| Another process holding the pin | `sudo lsof /dev/gpiomem*` to find the culprit |
 
 ---
 
-### **Camera Not Detected**
+### **Relays Not Activating**
 
-**Symptom:** Camera frames not captured, face detection fails.
+**Symptom:** Door doesn't open, no click from relay.
 
-**Diagnosis:**
+**Check:**
+1. Confirm `RELAY_ACTIVE_LEVEL=active_low` in `.env` (SRD-05VDC and SRD-12VDC are active-LOW)
+2. Verify BCM pin matches the relay module channel (see [Hardware Reference](#hardware-reference))
+3. Test relay directly:
 ```bash
-python3 diagnose.py  # Check camera detection
-ls /dev/video*       # Should list /dev/video0, /dev/video2, etc.
+python3 -c "
+import lgpio, time
+h = lgpio.gpiochip_open(0)  # or 4 on older Pi 5 kernels
+lgpio.gpio_claim_output(h, 2)
+lgpio.gpio_write(h, 2, 0)   # LOW = relay ON (active-low)
+time.sleep(3)
+lgpio.gpio_write(h, 2, 1)   # HIGH = relay OFF
+lgpio.gpiochip_close(h)
+"
 ```
 
-**CSI Camera Issues:**
+---
+
+### **Camera Not Opening**
+
+**Symptom:** `Camera /dev/videoX could not be opened` in logs.
+
+**Check:**
 ```bash
-sudo raspi-config  # Enable Camera in Interface Options
-# Reboot and retry
+v4l2-ctl --list-devices          # Confirm device nodes
+v4l2-ctl -d /dev/video0 --list-formats-ext  # Check MJPEG support
+
+# Test GStreamer pipeline directly
+gst-launch-1.0 v4l2src device=/dev/video0 ! \
+  image/jpeg,width=1280,height=720,framerate=30/1 ! \
+  jpegdec ! videoconvert ! autovideosink
 ```
 
-**USB Webcam Not Detected:**
-```bash
-lsusb              # List connected USB devices
-# Check if camera appears
-dmesg | tail -20   # Look for USB errors
-```
+If a camera lands on a different device node after replug, update `USB_DEVICE_MAP` in `hardware/camera_manager.py`.
+
+---
+
+### **Admin Panel Commands Return OK But Nothing Happens**
+
+**Symptom:** Admin sends `open_door` command, server logs "OK", but relay doesn't fire.
+
+**Root causes & fixes:**
+
+1. **Server config overriding Pi wiring** — fixed in `socket_client.py`. The `kiosk:config` handler now ignores `solenoid_pins` / `actuator_pins` from the server.
+2. **GPIO busy** — see above.
+3. **Wrong door key** — admin must send `door: "main_door"` or `door: "bottom_door"` (not `"trapdoor"` — trapdoor hardware was removed).
+4. **Pi not actually connected** — check `sudo journalctl -u engirent-kiosk.service -f` for the registration log line:
+   ```
+   🟢 [PI-ONLINE]  Kiosk registered
+   ```
 
 ---
 
 ### **Backend Connection Fails**
 
-**Symptom:** Socket.io can't connect to backend, logs show timeout.
+**Symptom:** Socket.io can't connect, logs show repeated "reconnecting in 5s".
 
-**Check:**
 ```bash
-curl https://api.engirent.com/health  # Verify backend is up
-```
+# Verify backend is reachable
+curl https://api.engirent.com/health
 
-**Verify Environment:**
-```bash
-cat .env | grep SERVER_URL
-# Ensure URL is correct (https://, no trailing slash)
-```
-
-**Test Socket Connection:**
-```bash
-python3 -c "
-import asyncio
-from services.socket_client import SocketClient
-client = SocketClient()
-asyncio.run(client.connect())
-"
+# Check .env
+grep SERVER_URL .env
+# Must have no trailing slash, correct https:// prefix
 ```
 
 ---
 
-### **Flask UI Not Accessible**
+### **WiFi Not Detected on Startup**
 
-**Symptom:** Can't reach `http://localhost:8080` from browser.
+Pi enters AP mode automatically. To connect:
+1. Connect to `EngiRent-Kiosk-Setup` WiFi from phone/laptop
+2. Open `http://192.168.4.1` in browser
+3. Select home WiFi and enter password
+4. Wait for Pi to reconnect and resume
 
-**Check Port:**
+Manual fallback:
 ```bash
-lsof -i :8080  # See what's using port 8080
+sudo nmtui
 ```
-
-**Verify Flask Started:**
-```bash
-ps aux | grep main.py  # Look for Python process
-```
-
-**Check Firewall:**
-```bash
-sudo ufw status  # Ensure port 8080 is open
-sudo ufw allow 8080/tcp  # If needed
-```
-
----
-
-### **Out of Memory / Slow Performance**
-
-**Symptom:** Kiosk freezes, processes crash.
-
-**Check Memory:**
-```bash
-free -h
-top  # Look for memory-hungry processes
-```
-
-**Optimize:**
-- Reduce camera resolution in `camera_manager.py`
-- Disable face recognition if not needed
-- Check for memory leaks in long-running threads
-- Reduce image quality for uploads
 
 ---
 
 ### **Image Upload Failing**
 
-**Symptom:** Images not reaching Supabase, upload service errors.
-
-**Check Credentials:**
 ```bash
-cat .env | grep SUPABASE
-# Verify URL and key are correct
-```
+# Check Supabase credentials
+grep SUPABASE .env
 
-**Test Upload Directly:**
-```bash
-python3 -c "
-from services.image_uploader import ImageUploader
-uploader = ImageUploader()
-# Manually test upload
-"
+# Confirm bucket exists
+# Login to supabase.com → Storage → check "media" bucket exists and is not private
 ```
-
-**Check Bucket Permissions:**
-- Login to Supabase dashboard
-- Verify storage bucket `media` exists and is readable
 
 ---
 
@@ -540,51 +636,58 @@ uploader = ImageUploader()
 ### **Common Commands**
 
 ```bash
-# Start kiosk (manual)
+# Start kiosk manually
 source venv/bin/activate && python3 main.py
 
-# Test hardware
+# Run hardware diagnostics
 python3 diagnose.py
 
-# View logs (running service)
+# View live service logs
 sudo journalctl -u engirent-kiosk.service -f
 
-# Restart service
-sudo systemctl restart engirent-kiosk.service
+# Restart service after code update
+git pull && sudo systemctl restart engirent-kiosk.service
 
-# Connect to WiFi (interactive)
+# Connect to WiFi interactively
 sudo nmtui
 
-# Check system resources
+# Check V4L2 cameras
+v4l2-ctl --list-devices
+
+# Check GPIO chip
+gpioinfo | head -5
+
+# System resources
 free -h && df -h
 ```
 
-### **File Locations**
+### **Key Files**
 
 | File | Purpose |
 |------|---------|
-| `.env` | Environment variables (API keys, URLs) |
-| `kiosk_config.json` | Locker timings & behavior |
-| `hardware/gpio_controller.py` | GPIO pin definitions |
-| `kiosk_ui/server.py` | Web UI endpoints |
-| `services/socket_client.py` | Backend connection logic |
-| `data/kiosk.log` | Application logs |
+| `.env` | API keys, URLs, relay mode, mock flags |
+| `config.py` | GPIO pin map (`LOCKER_PINS`) — source of truth for wiring |
+| `kiosk_config.json` | Door open/actuator timing in seconds |
+| `hardware/camera_manager.py` | `USB_DEVICE_MAP` — V4L2 device node assignments |
+| `hardware/gpio_controller.py` | Solenoid relay open/lock logic |
+| `hardware/actuator_controller.py` | Actuator extend/retract logic |
+| `services/socket_client.py` | All backend command handlers |
+| `/boot/firmware/config.txt` | Must have `camera_auto_detect=0` |
 
 ---
 
 ## Next Steps
 
-1. ✅ **Complete Hardware Setup** – See [SETUP.md](./SETUP.md)
-2. ✅ **Follow Setup Instructions** (above)
-3. ✅ **Run `diagnose.py`** – Verify hardware
-4. ✅ **Test with `python3 main.py`** – Manual start
-5. ✅ **Enable Autostart** – Systemd service
-6. ✅ **Monitor with Logs** – `journalctl` command
-
-For backend integration details, see `../node_server/README.md`.
+1. ✅ Set `camera_auto_detect=0` in `/boot/firmware/config.txt` and reboot
+2. ✅ Run `v4l2-ctl --list-devices` and confirm 5 camera nodes
+3. ✅ Test each camera with `ffmpeg` and update `USB_DEVICE_MAP` if needed
+4. ✅ Run `python3 diagnose.py` — verify all GPIO and cameras
+5. ✅ Run `python3 main.py` — confirm Pi connects and admin shows kiosk online
+6. ✅ Enable autostart with systemd service
+7. ✅ Monitor with `journalctl -u engirent-kiosk.service -f`
 
 ---
 
-**Last Updated:** 2026-04-22  
-**Version:** 1.0  
+**Last Updated:** 2026-04-22
+**Version:** 2.0
 **Maintainer:** EngiRent Team
