@@ -68,6 +68,22 @@ systemctl start  NetworkManager 2>/dev/null || true
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. CRITICAL — Disable camera_auto_detect (kernel claims GPIO4 otherwise)
 # ══════════════════════════════════════════════════════════════════════════════
+step "Disabling conflicting kernel interfaces (I2C / SPI / UART)"
+# BCM 2,3  are I2C SDA/SCL  → claimed when I2C is enabled
+# BCM 8-11 are SPI pins     → claimed when SPI is enabled
+# BCM 14,15 are UART TX/RX  → claimed when serial hardware is enabled
+# All of these overlap with relay/actuator pins — must be disabled.
+if command -v raspi-config &>/dev/null; then
+    raspi-config nonint do_i2c      1 && echo "  ✓ I2C disabled   (frees BCM 2, 3)"   || echo "  ⚠  I2C disable failed"
+    raspi-config nonint do_spi      1 && echo "  ✓ SPI disabled   (frees BCM 8–11)"   || echo "  ⚠  SPI disable failed"
+    raspi-config nonint do_serial_hw 0 && echo "  ✓ UART disabled  (frees BCM 14, 15)" || echo "  ⚠  UART disable failed"
+else
+    echo "  ⚠  raspi-config not found — disable manually in /boot/firmware/config.txt:"
+    echo "     dtparam=i2c_arm=off"
+    echo "     dtparam=spi=off"
+    echo "     # comment out: enable_uart=1 / dtoverlay=uart..."
+fi
+
 step "Patching boot config: camera_auto_detect=0"
 if [ -z "$BOOT_CFG" ]; then
     echo "  ⚠  Boot config not found — patch manually:"

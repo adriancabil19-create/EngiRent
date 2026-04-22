@@ -521,10 +521,28 @@ sudo reboot
 
 ### `lgpio.error: GPIO busy` on a Specific Pin
 
+Several BCM pins used for relays are shared with kernel hardware interfaces that are enabled by default. All must be disabled:
+
+| BCM Pins | Interface | Relay function |
+|---|---|---|
+| BCM 2, 3 | I2C (SDA/SCL) | Lockers 1 & 2 — main doors |
+| BCM 8, 9, 10, 11 | SPI | Bottom doors & actuators |
+| BCM 14, 15 | UART (TX/RX) | Locker 3 — actuators |
+
+**Fix — disable all three:**
+```bash
+sudo raspi-config nonint do_i2c       1   # 1 = disable
+sudo raspi-config nonint do_spi       1
+sudo raspi-config nonint do_serial_hw 0   # 0 = disable hardware serial
+sudo reboot
+```
+
+Other causes:
+
 | Cause | Fix |
 |---|---|
 | `camera_auto_detect=1` in boot config | Set `camera_auto_detect=0`, reboot |
-| Wrong GPIO chip number (Pi 5 kernel change) | `GPIO_CHIP` is auto-detected in `config.py` — check the detected value in logs |
+| Wrong GPIO chip number | `GPIO_CHIP` is auto-detected in `config.py` — check log for `gpiochip0` vs `gpiochip4` |
 | Another process holding the pin | `sudo lsof /dev/gpiomem*` — find and kill the process |
 
 ---
