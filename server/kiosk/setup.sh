@@ -73,15 +73,41 @@ step "Disabling conflicting kernel interfaces (I2C / SPI / UART)"
 # BCM 8-11 are SPI pins     → claimed when SPI is enabled
 # BCM 14,15 are UART TX/RX  → claimed when serial hardware is enabled
 # All of these overlap with relay/actuator pins — must be disabled.
-if command -v raspi-config &>/dev/null; then
-    raspi-config nonint do_i2c      1 && echo "  ✓ I2C disabled   (frees BCM 2, 3)"   || echo "  ⚠  I2C disable failed"
-    raspi-config nonint do_spi      1 && echo "  ✓ SPI disabled   (frees BCM 8–11)"   || echo "  ⚠  SPI disable failed"
-    raspi-config nonint do_serial_hw 0 && echo "  ✓ UART disabled  (frees BCM 14, 15)" || echo "  ⚠  UART disable failed"
+if [ -z "$BOOT_CFG" ]; then
+    echo "  ⚠  Boot config not found — disable I2C/SPI/UART manually"
 else
-    echo "  ⚠  raspi-config not found — disable manually in /boot/firmware/config.txt:"
-    echo "     dtparam=i2c_arm=off"
-    echo "     dtparam=spi=off"
-    echo "     # comment out: enable_uart=1 / dtoverlay=uart..."
+    # I2C — claims BCM 2 (SDA) and BCM 3 (SCL)
+    if grep -q "^dtparam=i2c_arm=on" "$BOOT_CFG"; then
+        sed -i 's/^dtparam=i2c_arm=on/dtparam=i2c_arm=off/' "$BOOT_CFG"
+        echo "  ✓ I2C disabled in boot config  (frees BCM 2, 3)"
+    elif grep -q "^dtparam=i2c_arm=off" "$BOOT_CFG"; then
+        echo "  ✓ I2C already disabled"
+    else
+        echo "dtparam=i2c_arm=off" >> "$BOOT_CFG"
+        echo "  ✓ I2C=off added to boot config  (frees BCM 2, 3)"
+    fi
+
+    # SPI — claims BCM 8 (CE0), 9 (MISO), 10 (MOSI), 11 (CLK)
+    if grep -q "^dtparam=spi=on" "$BOOT_CFG"; then
+        sed -i 's/^dtparam=spi=on/dtparam=spi=off/' "$BOOT_CFG"
+        echo "  ✓ SPI disabled in boot config  (frees BCM 8–11)"
+    elif grep -q "^dtparam=spi=off" "$BOOT_CFG"; then
+        echo "  ✓ SPI already disabled"
+    else
+        echo "dtparam=spi=off" >> "$BOOT_CFG"
+        echo "  ✓ SPI=off added to boot config  (frees BCM 8–11)"
+    fi
+
+    # UART — claims BCM 14 (TX) and BCM 15 (RX)
+    if grep -q "^enable_uart=1" "$BOOT_CFG"; then
+        sed -i 's/^enable_uart=1/enable_uart=0/' "$BOOT_CFG"
+        echo "  ✓ UART disabled in boot config  (frees BCM 14, 15)"
+    elif grep -q "^enable_uart=0" "$BOOT_CFG"; then
+        echo "  ✓ UART already disabled"
+    else
+        echo "enable_uart=0" >> "$BOOT_CFG"
+        echo "  ✓ UART=0 added to boot config  (frees BCM 14, 15)"
+    fi
 fi
 
 step "Patching boot config: camera_auto_detect=0"
