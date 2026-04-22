@@ -1,275 +1,609 @@
-# EngiRent Kiosk – Raspberry Pi 5 Setup Guide
+# EngiRent Kiosk – Raspberry Pi 5 Hardware & Setup Guide
 
-## Hardware Requirements
+---
+
+## Table of Contents
+
+1. [Hardware Requirements](#1-hardware-requirements)
+2. [OS Flash](#2-os-flash)
+3. [CRITICAL — Boot Config Fix](#3-critical--boot-config-fix)
+4. [Automated Setup (Recommended)](#4-automated-setup-recommended)
+5. [Manual Setup](#5-manual-setup)
+6. [GPIO Wiring Reference](#6-gpio-wiring-reference)
+7. [Camera Wiring & Identification](#7-camera-wiring--identification)
+8. [Environment Variables](#8-environment-variables)
+9. [Locker Timing Config](#9-locker-timing-config)
+10. [WiFi Provisioning](#10-wifi-provisioning)
+11. [Verify & Test](#11-verify--test)
+12. [Troubleshooting](#12-troubleshooting)
+
+---
+
+## 1. Hardware Requirements
 
 | Component | Qty | Notes |
 |---|---|---|
-| Raspberry Pi 5 (4 GB+) | 1 | RP1 GPIO chip |
-| L298N dual-channel H-bridge motor driver | 2 | 2 channels each → 4 lockers total |
-| 12V linear actuator | 4 | One per locker trapdoor |
-| 5V relay module (4-ch) | 3 | 12 channels total for solenoids |
-| 12V solenoid lock | 12 | 3 per locker (main, trapdoor, bottom) |
-| 12V 5A power supply | 1 | Solenoids + actuators |
-| 5V 3A USB-C power supply | 1 | Pi |
-| Raspberry Pi Camera Module 3 | 2 | CSI0 + CSI1 (lockers 1, 2) |
-| USB webcam | 3 | Lockers 3, 4 + face recognition |
-| HDMI monitor | 1 | 7–10" for kiosk display |
+| Raspberry Pi 5 (4 GB+) | 1 | RP1 GPIO chip (gpiochip0 / gpiochip4 kernel-dependent) |
+| 4-channel relay module (SRD-05VDC-SL-C) | 3 | Modules 1–3: main doors, bottom doors, actuators L1/L2 |
+| 1-channel relay module (SRD-12VDC-SL-C) | 4 | Module 4: actuators L3/L4 extend + retract (×2 each) |
+| 12V solenoid lock | 8 | 2 per locker (main door + bottom door) |
+| 12V linear actuator | 4 | 1 per locker — controlled by relay pairs (extend/retract) |
+| 12V 10A power supply | 1 | Solenoids + actuators |
+| 5V 3A USB-C power supply | 1 | Pi only |
+| USB camera | 5 | 4 locker interior cams + 1 face cam (USB extension cables) |
+| HDMI monitor / touchscreen | 1 | 7–10″ for kiosk display |
+| USB hub (powered) | 1 | For 5 simultaneous USB cameras |
+
+> **No CSI cameras.** All cameras are USB. `picamera2` is not used.  
+> **No H-bridge / L298N motor drivers.** Actuators are controlled by relay pairs (one relay extends, one retracts).
 
 ---
 
-## 1. OS Setup
+## 2. OS Flash
 
-Flash **Raspberry Pi OS Trixie (64-bit, full desktop)** using Raspberry Pi Imager.
+Flash **Raspberry Pi OS Bookworm or Trixie (64-bit, full desktop)** with Raspberry Pi Imager.
 
-Before booting, in Imager settings:
-- Set hostname: `engirent-kiosk`
+In Imager advanced settings before writing:
+- Hostname: `engirent-kiosk`
 - Enable SSH
-- Set username: `pi` / password of your choice
-- Do **not** preconfigure WiFi (provisioning handles it)
+- Username: `pi` (or your preferred username)
+- Password: set a strong password
+- **Do NOT preconfigure WiFi** — the kiosk handles provisioning on first boot
 
 ---
 
-## 2. System Dependencies
+## 3. CRITICAL — Boot Config Fix
+
+**Do this before running setup or starting the kiosk.**
+
+The default `camera_auto_detect=1` in the Pi boot config causes the kernel to probe for CSI cameras and claims **GPIO4** in the process — even when no CSI camera is connected. This permanently blocks Locker 3's main door relay.
+
+After first boot, SSH into the Pi and fix it:
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-
-# GPIO (RP1 chip)
-sudo apt install -y python3-lgpio python3-gpiozero
-
-# Camera
-sudo apt install -y python3-picamera2 python3-opencv
-
-# System utils
-sudo apt install -y git python3-pip python3-venv chromium unclutter
-
-# NetworkManager (already installed on Bookworm desktop)
-sudo systemctl enable NetworkManager
+sudo nano /boot/firmware/config.txt
 ```
 
-USB cameras are plug-and-play — no raspi-config step needed.
-Verify cameras are detected after plugging in:
+Find this line:
+```
+camera_auto_detect=1
+```
+
+Change it to:
+```
+camera_auto_detect=0
+```
+
+Save and reboot:
 ```bash
-ls /dev/video*
-# Should show /dev/video0, /dev/video2, /dev/video4 etc.
+sudo reboot
 ```
+
+> If you already ran the automated `setup.sh`, this was patched for you automatically.
 
 ---
 
-## 3. Clone Repository
+## 4. Automated Setup (Recommended)
+
+After cloning the repo, run the one-shot setup script. It handles everything: packages, boot config patch, venv, `.env`, config JSON, systemd service, and Chromium autostart.
 
 ```bash
 cd ~
 git clone https://github.com/Shaloh69/EngiRent.git engirent
 cd engirent/server/kiosk
+sudo bash setup.sh
+```
+
+The script will prompt you interactively for required credentials (Supabase key, server URL, etc.), then print next steps when done.
+
+**After setup completes:**
+
+```bash
+sudo reboot   # applies camera_auto_detect=0 and auto-login
+```
+
+After reboot:
+
+```bash
+sudo systemctl start engirent-kiosk.service
+sudo journalctl -u engirent-kiosk.service -f
 ```
 
 ---
 
-## 4. Python Virtual Environment
+## 5. Manual Setup
+
+Skip this section if you used `setup.sh`.
+
+### 5.1 System Packages
 
 ```bash
-python3 -m venv venv --system-site-packages   # inherit system lgpio/picamera2/cv2
+sudo apt update && sudo apt upgrade -y
+
+# GPIO (Pi 5 RP1 chip)
+sudo apt install -y python3-lgpio python3-gpiozero
+
+# Camera — USB only via OpenCV + GStreamer (no picamera2)
+sudo apt install -y python3-opencv
+sudo apt install -y \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    python3-gst-1.0
+
+# Camera tools
+sudo apt install -y v4l-utils ffmpeg
+
+# Kiosk browser + cursor hider
+sudo apt install -y chromium unclutter
+
+# Network
+sudo apt install -y network-manager git python3-pip python3-venv curl
+sudo systemctl enable NetworkManager
+```
+
+### 5.2 Python Virtual Environment
+
+```bash
+cd ~/engirent/server/kiosk
+python3 -m venv venv --system-site-packages
 source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> `--system-site-packages` is required because `lgpio` and `picamera2` are installed
-> system-wide via apt and cannot be pip-installed cleanly on Pi 5.
+> `--system-site-packages` is required so the venv inherits system-installed `lgpio` and `opencv`.
 
----
-
-## 5. Environment Configuration
+### 5.3 Environment File
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in:
+See [Section 8](#8-environment-variables) for all variables.
 
-| Variable | Value |
-|---|---|
-| `KIOSK_ID` | `kiosk-1` (unique per device) |
-| `SERVER_URL` | `https://engirent-api.onrender.com` |
-| `SUPABASE_URL` | From Supabase project settings |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase API keys |
-| `SUPABASE_STORAGE_BUCKET` | `media` |
-| `ML_SERVICE_URL` | `https://engirent-ml.onrender.com` |
-| `UI_PORT` | `8080` |
-| `RELAY_ACTIVE_LEVEL` | `0` (active-LOW relay) or `1` (active-HIGH) |
-| `MOCK_GPIO` | `false` (set `true` for dev without hardware) |
-| `MOCK_CAMERA` | `false` |
-
-AP provisioning defaults (can leave as-is):
-
-| Variable | Default |
-|---|---|
-| `AP_SSID` | `EngiRent-Kiosk-Setup` |
-| `AP_PASSWORD` | `engirent123` |
-| `AP_IP` | `192.168.4.1` |
-
----
-
-## 6. GPIO Wiring
-
-### Solenoid Relay Connections
-
-Each relay module is driven by a Pi GPIO pin (active-LOW by default):
-
-| Locker | Door | GPIO Pin |
-|---|---|---|
-| 1 | Main door | 17 |
-| 1 | Trapdoor | 18 |
-| 1 | Bottom door | 27 |
-| 2 | Main door | 22 |
-| 2 | Trapdoor | 23 |
-| 2 | Bottom door | 24 |
-| 3 | Main door | 25 |
-| 3 | Trapdoor | 8 |
-| 3 | Bottom door | 7 |
-| 4 | Main door | 1 |
-| 4 | Trapdoor | 0 |
-| 4 | Bottom door | 5 |
-
-### L298N Actuator Connections (2× dual-channel driver)
-
-Each L298N has two independent H-bridge channels (A and B), one driver handles two lockers.
-
-**Driver 1 — Lockers 1 & 2**
-
-| Channel | Locker | ENA/ENB (PWM) | IN1/IN3 (DIR) | IN2/IN4 | OUT |
-|---|---|---|---|---|---|
-| A | 1 | GPIO 12 | GPIO 16 | GND | OUT1/OUT2 → Actuator 1 |
-| B | 2 | GPIO 20 | GPIO 21 | GND | OUT3/OUT4 → Actuator 2 |
-
-**Driver 2 — Lockers 3 & 4**
-
-| Channel | Locker | ENA/ENB (PWM) | IN1/IN3 (DIR) | IN2/IN4 | OUT |
-|---|---|---|---|---|---|
-| A | 3 | GPIO 19 | GPIO 26 | GND | OUT1/OUT2 → Actuator 3 |
-| B | 4 | GPIO 13 | GPIO 6  | GND | OUT3/OUT4 → Actuator 4 |
-
-**Per-driver wiring (apply to both drivers):**
-- `ENA` / `ENB` → PWM pins (speed control, jumper removed)
-- `IN1` / `IN3` → DIR pins (direction)
-- `IN2` / `IN4` → GND (via 10 kΩ pull-down, or tie LOW)
-- `12V` → 12V supply, `GND` → common ground with Pi
-- `OUT1/OUT2`, `OUT3/OUT4` → Actuator motor terminals
-
-### Camera Connections
-
-| Camera | Interface | Index |
-|---|---|---|
-| Locker 1 | CSI0 | – |
-| Locker 2 | CSI1 | – |
-| Locker 3 | USB `/dev/video4` | 0 |
-| Locker 4 | USB `/dev/video5` | 1 |
-| Face recognition | USB `/dev/video6` | 2 |
-
----
-
-## 7. First-Boot WiFi Provisioning
-
-On first boot (no WiFi configured):
-
-1. The kiosk automatically starts a hotspot named **`EngiRent-Kiosk-Setup`**
-2. Connect your phone or laptop to that network (password: `engirent123`)
-3. Open **http://192.168.4.1** in a browser
-4. Select your WiFi network, enter the password, tap **Connect & Reboot**
-5. The Pi reboots and connects to your WiFi — provisioning is complete
-
----
-
-## 8. Install Systemd Services
+### 5.4 Default Timing Config
 
 ```bash
-# Kiosk controller service
-sudo cp systemd/engirent-kiosk.service /etc/systemd/system/
+# Only needed if kiosk_config.json doesn't exist
+cp kiosk_config.json.example kiosk_config.json  # or create manually — see Section 9
+```
+
+### 5.5 Systemd Service
+
+```bash
+# Edit the service file to match your username and path
+sudo sed \
+    -e "s|/home/pi/engirent/server/kiosk|$(pwd)|g" \
+    -e "s|User=pi|User=$(whoami)|g" \
+    systemd/engirent-kiosk.service \
+    > /tmp/engirent-kiosk.service
+
+sudo mv /tmp/engirent-kiosk.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable engirent-kiosk.service
-sudo systemctl start  engirent-kiosk.service
-
-# Chromium kiosk browser (auto-launch on desktop)
-sudo cp systemd/engirent-kiosk-browser.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable engirent-kiosk-browser.service
-sudo systemctl start  engirent-kiosk-browser.service
 ```
 
-Check status:
-```bash
-sudo systemctl status engirent-kiosk.service
-journalctl -u engirent-kiosk.service -f   # live logs
-```
-
----
-
-## 9. Auto-Login to Desktop (for Chromium)
+### 5.6 Chromium Autostart
 
 ```bash
-sudo raspi-config
-# System Options → Boot / Auto Login → Desktop Autologin
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/engirent-browser.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=EngiRent Kiosk Browser
+Exec=bash -c 'until curl -sf http://localhost:8080 >/dev/null 2>&1; do sleep 1; done && /usr/bin/chromium --noerrdialogs --disable-infobars --kiosk --start-fullscreen --app=http://localhost:8080'
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+EOF
 ```
 
----
-
-## 10. Hide Mouse Cursor
-
-```bash
-sudo nano /etc/xdg/lxsession/LXDE-pi/autostart
-```
-Add at the end:
-```
-@unclutter -idle 0 -root
-```
-
----
-
-## 11. Screen Blanking / Power Save Off
+### 5.7 Auto-Login & Screen Blanking
 
 ```bash
-sudo nano /etc/xdg/lxsession/LXDE-pi/autostart
-```
-Add:
-```
+sudo raspi-config nonint do_boot_behaviour B4   # Desktop auto-login
+
+# Disable screen blanking
+mkdir -p ~/.config/lxsession/LXDE-pi
+cat >> ~/.config/lxsession/LXDE-pi/autostart <<'EOF'
 @xset s off
 @xset -dpms
 @xset s noblank
+@unclutter -idle 0 -root
+EOF
 ```
 
 ---
 
-## 12. Testing Without Hardware
+## 6. GPIO Wiring Reference
+
+### Overview
+
+| Relay Module | Type | Channels | Controls |
+|---|---|---|---|
+| Module 1 | 4-ch SRD-05VDC-SL-C | BCM 2, 3, 4, 5 | Main door solenoids L1–L4 |
+| Module 2 | 4-ch SRD-05VDC-SL-C | BCM 6, 7, 8, 9 | Bottom door solenoids L1–L4 |
+| Module 3 | 4-ch SRD-05VDC-SL-C | BCM 10, 11, 12, 13 | Actuators L1 ext/ret, L2 ext/ret |
+| Module 4 | 4× 1-ch SRD-12VDC-SL-C | BCM 14, 15, 16, 17 | Actuators L3 ext/ret, L4 ext/ret |
+
+> All modules are **active-LOW** (signal LOW = relay ON, signal HIGH = relay OFF).  
+> Set `RELAY_ACTIVE_LEVEL=active_low` in `.env`.
+
+### Full Pin Table
+
+| BCM Pin | GPIO Header | Relay Module | Function |
+|---|---|---|---|
+| BCM 2 | Pin 3 | Module 1, CH1 | Locker 1 — Main door solenoid |
+| BCM 3 | Pin 5 | Module 1, CH2 | Locker 2 — Main door solenoid |
+| BCM 4 | Pin 7 | Module 1, CH3 | Locker 3 — Main door solenoid |
+| BCM 5 | Pin 29 | Module 1, CH4 | Locker 4 — Main door solenoid |
+| BCM 6 | Pin 31 | Module 2, CH1 | Locker 1 — Bottom door solenoid |
+| BCM 7 | Pin 26 | Module 2, CH2 | Locker 2 — Bottom door solenoid |
+| BCM 8 | Pin 24 | Module 2, CH3 | Locker 3 — Bottom door solenoid |
+| BCM 9 | Pin 21 | Module 2, CH4 | Locker 4 — Bottom door solenoid |
+| BCM 10 | Pin 19 | Module 3, CH1 | Locker 1 — Actuator EXTEND |
+| BCM 11 | Pin 23 | Module 3, CH2 | Locker 1 — Actuator RETRACT |
+| BCM 12 | Pin 32 | Module 3, CH3 | Locker 2 — Actuator EXTEND |
+| BCM 13 | Pin 33 | Module 3, CH4 | Locker 2 — Actuator RETRACT |
+| BCM 14 | Pin 8 | Module 4, Relay 1 | Locker 3 — Actuator EXTEND |
+| BCM 15 | Pin 22 | Module 4, Relay 2 | Locker 3 — Actuator RETRACT |
+| BCM 16 | Pin 36 | Module 4, Relay 3 | Locker 4 — Actuator EXTEND |
+| BCM 17 | Pin 11 | Module 4, Relay 4 | Locker 4 — Actuator RETRACT |
+
+### Actuator Wiring
+
+Each actuator is wired to **two relay outputs**:
+
+```
+Extend relay COM  → Actuator (+)   |   12V supply → Extend relay NO
+Retract relay COM → Actuator (–)   |   12V supply → Retract relay NO
+Common GND        → Actuator GND
+```
+
+Extend relay ON + Retract relay OFF → actuator pushes out  
+Extend relay OFF + Retract relay ON → actuator pulls back  
+Both OFF → actuator holds position
+
+### Solenoid Wiring
+
+```
+Relay COM → Solenoid (+)
+Relay NO  → 12V supply
+Solenoid (–) → Common GND
+```
+
+Relay ON (signal LOW) → solenoid energised → door unlocked  
+Relay OFF (signal HIGH) → solenoid de-energised → door locked
+
+---
+
+## 7. Camera Wiring & Identification
+
+### Setup
+
+All 5 cameras are USB. Connect via USB extension cables to the Pi's USB 3.0 ports (blue), using a powered USB hub if needed.
+
+Each USB camera registers **two V4L2 device nodes**. Only the first (lower-numbered) node captures video.
+
+### Expected Device Map
+
+Run after connecting all cameras:
+
+```bash
+v4l2-ctl --list-devices
+```
+
+Expected output:
+
+```
+USB Camera (usb-xhci-hcd.1-1.1):
+    /dev/video0    ← use this  (Locker 1)
+    /dev/video1    ← metadata, ignore
+
+USB Camera (usb-xhci-hcd.1-1.2):
+    /dev/video2    ← use this  (Locker 2)
+    /dev/video3
+
+USB Camera (usb-xhci-hcd.1-1.3):
+    /dev/video4    ← use this  (Locker 3)
+    /dev/video5
+
+USB Camera (usb-xhci-hcd.1-1.3):
+    /dev/video7    ← use this  (Locker 4)
+    /dev/video8
+
+USB Camera (usb-xhci-hcd.1-1.4):
+    /dev/video10   ← use this  (Face cam)
+    /dev/video11
+```
+
+> Device nodes can shift after reboot or replug. Always verify with `v4l2-ctl --list-devices` and update `USB_DEVICE_MAP` in `hardware/camera_manager.py` if they change.
+
+### Identify Which Camera is Which Locker
+
+Test each device node, open the saved image, and physically confirm which locker it shows:
+
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video0  -frames:v 1 /tmp/cam0.jpg  -y
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video2  -frames:v 1 /tmp/cam2.jpg  -y
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video4  -frames:v 1 /tmp/cam4.jpg  -y
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video7  -frames:v 1 /tmp/cam7.jpg  -y
+ffmpeg -f v4l2 -input_format mjpeg -video_size  640x480 -i /dev/video10 -frames:v 1 /tmp/cam10.jpg -y
+```
+
+Open images on the Pi:
+```bash
+eog /tmp/cam0.jpg   # or: xdg-open /tmp/cam0.jpg
+```
+
+Once confirmed, update `USB_DEVICE_MAP` in `hardware/camera_manager.py`:
+
+```python
+USB_DEVICE_MAP: dict[int, str] = {
+    0: "/dev/video0",    # Locker 1
+    1: "/dev/video2",    # Locker 2
+    2: "/dev/video4",    # Locker 3
+    3: "/dev/video7",    # Locker 4
+    4: "/dev/video10",   # Face cam
+}
+```
+
+### Check Supported Formats
+
+```bash
+v4l2-ctl -d /dev/video0 --list-formats-ext
+```
+
+Look for `MJPG` at 1280×720 or higher. If only YUYV is listed, the camera will use the fallback 640×480 mode (slower but functional).
+
+---
+
+## 8. Environment Variables
+
+```bash
+nano ~/engirent/server/kiosk/.env
+```
+
+| Variable | Example / Default | Description |
+|---|---|---|
+| `KIOSK_ID` | `kiosk-1` | Unique ID per physical device |
+| `SERVER_URL` | `https://engirent-api.onrender.com` | Node.js backend Socket.io URL |
+| `SUPABASE_URL` | `https://xxx.supabase.co` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ0…` | Service role key (from Supabase → API) |
+| `SUPABASE_STORAGE_BUCKET` | `media` | Storage bucket name |
+| `ML_SERVICE_URL` | `https://engirent-ml.onrender.com` | Face verification ML service |
+| `UI_PORT` | `8080` | Port for the local Flask kiosk UI |
+| `AP_SSID` | `EngiRent-Kiosk-Setup` | WiFi AP name for provisioning |
+| `AP_PASSWORD` | `engirent2026` | WiFi AP password |
+| `AP_IP` | `192.168.4.1` | AP gateway IP |
+| `RELAY_ACTIVE_LEVEL` | `active_low` | `active_low` for SRD modules, `active_high` for SSRs |
+| `MOCK_GPIO` | `False` | `True` = skip real GPIO (safe for non-Pi testing) |
+| `MOCK_CAMERA` | `False` | `True` = return grey placeholder images |
+
+---
+
+## 9. Locker Timing Config
+
+`kiosk_config.json` controls how long doors stay open and how long actuators travel. All values are in **seconds**.
+
+```json
+{
+  "lockers": {
+    "1": {
+      "main_door_open_seconds": 15,
+      "bottom_door_open_seconds": 15,
+      "actuator_extend_seconds": 5,
+      "actuator_retract_seconds": 5,
+      "actuator_speed_percent": 100
+    },
+    "2": { "...same keys..." },
+    "3": { "...same keys..." },
+    "4": { "...same keys..." }
+  },
+  "face_recognition": {
+    "confidence_threshold": 0.6,
+    "capture_attempts": 3,
+    "capture_timeout_seconds": 30
+  }
+}
+```
+
+Timings can also be pushed remotely from the admin panel (Kiosk → Configure Timings). The Pi saves them locally on receipt.
+
+> **The Pi's `config.py` is always the source of truth for GPIO pin wiring.** The server never overrides pin assignments.
+
+---
+
+## 10. WiFi Provisioning
+
+On first boot (or if WiFi is not configured), the kiosk enters AP mode automatically:
+
+1. Pi creates a hotspot: **`EngiRent-Kiosk-Setup`** (password set in `.env`)
+2. Connect your phone or laptop to that network
+3. Open **http://192.168.4.1** in a browser
+4. Select your home/office WiFi, enter the password, tap **Connect**
+5. Pi reboots and connects — provisioning is complete
+
+If the portal is unreachable, configure WiFi directly:
+```bash
+sudo nmtui
+```
+
+---
+
+## 11. Verify & Test
+
+### Check Service Status
+
+```bash
+sudo systemctl status engirent-kiosk.service
+sudo journalctl -u engirent-kiosk.service -f
+```
+
+Expected startup log:
+```
+[INFO]  kiosk.gpio    – GPIO chip detected: gpiochip0
+[INFO]  kiosk.camera  – Locker camera locker=1 device=/dev/video0 ✓
+[INFO]  kiosk.camera  – Locker camera locker=2 device=/dev/video2 ✓
+[INFO]  kiosk.camera  – Locker camera locker=3 device=/dev/video4 ✓
+[INFO]  kiosk.camera  – Locker camera locker=4 device=/dev/video7 ✓
+[INFO]  kiosk.camera  – Face camera device=/dev/video10 ✓
+[INFO]  kiosk.socket  – Connected to server ✓
+[INFO]  kiosk.socket  – 🟢 [PI-ONLINE] Kiosk registered
+```
+
+### Run Diagnostics
+
+```bash
+cd ~/engirent/server/kiosk
+source venv/bin/activate
+python3 diagnose.py
+```
+
+### Test in Mock Mode (No Hardware)
 
 ```bash
 source venv/bin/activate
-MOCK_GPIO=true MOCK_CAMERA=true python main.py
+MOCK_GPIO=True MOCK_CAMERA=True python3 main.py
 ```
 
-Open http://localhost:8080 to see the HDMI UI.
+Open http://localhost:8080 to view the local UI.
 
----
+### Manual GPIO Test (Single Relay)
 
-## 13. Updating Locker Timing Config
-
-Timing can be updated live from the EngiRent admin panel (Kiosk page → Configure Timings).
-
-To manually edit:
 ```bash
-nano /home/pi/engirent/server/kiosk/kiosk_config.json
+python3 -c "
+import lgpio, time
+h = lgpio.gpiochip_open(0)        # use 4 on older Pi 5 kernels
+lgpio.gpio_claim_output(h, 2)
+lgpio.gpio_write(h, 2, 0)         # LOW = relay ON (active-low)
+print('Relay ON — locker 1 main door')
+time.sleep(3)
+lgpio.gpio_write(h, 2, 1)         # HIGH = relay OFF
+lgpio.gpiochip_close(h)
+print('Relay OFF')
+"
+```
+
+### Update Code on Pi
+
+```bash
+cd ~/engirent
+git pull
 sudo systemctl restart engirent-kiosk.service
+sudo journalctl -u engirent-kiosk.service -f
 ```
 
 ---
 
-## Troubleshooting
+## 12. Troubleshooting
 
-| Issue | Fix |
+### Service Crashes on Start (exit code 1)
+
+**Most likely cause:** `camera_auto_detect=1` is still in `/boot/firmware/config.txt`, causing the kernel to claim GPIO4 before the kiosk can use it.
+
+```bash
+sudo journalctl -u engirent-kiosk.service -n 50
+# Look for: lgpio.error: 'GPIO busy'
+
+# Fix:
+sudo nano /boot/firmware/config.txt
+# Set: camera_auto_detect=0
+sudo reboot
+```
+
+---
+
+### `lgpio.error: GPIO busy` on a Specific Pin
+
+| Cause | Fix |
 |---|---|
-| `lgpio` not found | `sudo apt install python3-lgpio` |
-| Camera not detected | Run `ls /dev/video*` — try unplugging and replugging the USB camera |
-| Relay not triggering | Check `RELAY_ACTIVE_LEVEL` in `.env` (0 = active-LOW) |
-| Actuator runs one way only | Swap the two motor wires on OUT1/OUT2 (or OUT3/OUT4), or flip DIR_PIN logic in `config.py` |
-| WiFi provisioning portal unreachable | Ensure Pi is not already connected to WiFi, check `nmcli dev wifi` |
-| Kiosk browser black screen | `systemctl status engirent-kiosk.service` — ensure Flask UI started on port 8080 |
+| `camera_auto_detect=1` in boot config | Set `camera_auto_detect=0`, reboot |
+| Wrong GPIO chip number (Pi 5 kernel change) | `GPIO_CHIP` is auto-detected in `config.py` — check the detected value in logs |
+| Another process holding the pin | `sudo lsof /dev/gpiomem*` — find and kill the process |
+
+---
+
+### Relay Not Activating
+
+1. Confirm `RELAY_ACTIVE_LEVEL=active_low` in `.env` (SRD-05VDC and SRD-12VDC are active-LOW)
+2. Verify the BCM pin matches the relay terminal (see [Section 6](#6-gpio-wiring-reference))
+3. Test the relay directly with the manual GPIO test above
+4. Check power supply — solenoids draw ~500 mA each; a weak supply causes silent failures
+
+---
+
+### Camera Not Opening
+
+```bash
+# Check device nodes are present
+v4l2-ctl --list-devices
+
+# Test GStreamer pipeline directly
+gst-launch-1.0 v4l2src device=/dev/video0 ! \
+  image/jpeg,width=1280,height=720,framerate=30/1 ! \
+  jpegdec ! videoconvert ! autovideosink
+
+# If device node changed after replug:
+# Update USB_DEVICE_MAP in hardware/camera_manager.py
+```
+
+---
+
+### Admin Panel Commands Return OK But Relay Doesn't Fire
+
+1. **GPIO busy** — see above; fix `camera_auto_detect=0`
+2. **Server pushed stale pin config** — already fixed in `socket_client.py` (pin overrides from server are ignored)
+3. **Kiosk not actually registered** — check logs for the `🟢 [PI-ONLINE] Kiosk registered` line; if missing, the Pi's socket connection dropped
+
+---
+
+### Actuator Runs One Direction Only
+
+- Swap the motor wire polarity on the relay output terminals
+- Or swap the `actuator_extend_pin` and `actuator_retract_pin` values in `config.py`
+
+---
+
+### WiFi Provisioning Portal Unreachable
+
+```bash
+nmcli dev wifi          # check WiFi state
+sudo systemctl status NetworkManager
+# If still failing:
+sudo nmtui              # manual config
+```
+
+---
+
+### `lgpio` Not Found in Venv
+
+The venv must be created with `--system-site-packages`:
+```bash
+rm -rf venv
+python3 -m venv venv --system-site-packages
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+### Chromium Opens But Shows Blank Screen
+
+```bash
+# Check Flask UI is running
+curl http://localhost:8080
+sudo systemctl status engirent-kiosk.service
+# Flask starts on port 8080 — Chromium waits for it in the autostart entry
+```
+
+---
+
+**Last Updated:** 2026-04-22
+**Version:** 2.0
+**Maintainer:** EngiRent Team
