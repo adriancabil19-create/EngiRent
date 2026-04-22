@@ -120,7 +120,7 @@ async function runMlVerification(
   };
 }
 
-// ── Auto-complete a rental after successful verification ────────────────────
+// ── Auto-complete a rental after successful verifications ────────────────────
 async function completeRental(rentalId: string): Promise<void> {
   const rental = await prisma.rental.findUnique({
     where: { id: rentalId },
@@ -142,7 +142,7 @@ async function completeRental(rentalId: string): Promise<void> {
         userId: rental.renterId,
         title: "Rental Completed",
         message: `Your rental of ${rental.item.title} is complete. Security deposit refund is being processed.`,
-        type: "VERIFICATION_PASSED" as never,
+        type: "VERIFICATION_SUCCESS",
         relatedEntityId: rentalId,
         relatedEntityType: "rental",
       },
@@ -152,7 +152,7 @@ async function completeRental(rentalId: string): Promise<void> {
         userId: rental.ownerId,
         title: "Item Returned & Verified",
         message: `${rental.item.title} has been returned and verified. Rental payment will be released.`,
-        type: "VERIFICATION_PASSED" as never,
+        type: "VERIFICATION_SUCCESS",
         relatedEntityId: rentalId,
         relatedEntityType: "rental",
       },
@@ -399,7 +399,7 @@ io.on("connection", (socket: Socket) => {
                 userId: rental.renterId,
                 title: "Rental Cancelled",
                 message: `Deposit for ${rental.item.title} was rejected after ${attemptNumber} attempts.`,
-                type: "VERIFICATION_FAILED" as never,
+                type: "VERIFICATION_FAILED",
                 relatedEntityId: rental_id,
                 relatedEntityType: "rental",
               },
@@ -458,7 +458,7 @@ io.on("connection", (socket: Socket) => {
               userId: rental.renterId,
               title: "Item Ready for Claim",
               message: `${rental.item.title} has been deposited and is ready for pickup.`,
-              type: "ITEM_READY_FOR_CLAIM" as never,
+              type: "ITEM_READY_FOR_CLAIM",
               relatedEntityId: rental_id,
               relatedEntityType: "rental",
             },
@@ -565,7 +565,7 @@ io.on("connection", (socket: Socket) => {
                 userId: rental.ownerId,
                 title: "Return Disputed",
                 message: `Returned item for ${rental.item.title} did not match verification. Admin will review.`,
-                type: "VERIFICATION_FAILED" as never,
+                type: "VERIFICATION_FAILED",
                 relatedEntityId: rental_id,
                 relatedEntityType: "rental",
               },
@@ -631,7 +631,7 @@ io.on("connection", (socket: Socket) => {
                 userId: rental.ownerId,
                 title: "Item Returned — Under Review",
                 message: `${rental.item.title} return requires manual verification (confidence: ${confidence.toFixed(1)}%).`,
-                type: "RETURN_REMINDER" as never,
+                type: "RETURN_REMINDER",
                 relatedEntityId: rental_id,
                 relatedEntityType: "rental",
               },
@@ -727,7 +727,7 @@ io.on("connection", (socket: Socket) => {
               userId: rental.ownerId,
               title: "Item Claimed",
               message: `Your ${rental.item.title} has been claimed by the renter.`,
-              type: "ITEM_CLAIMED" as never,
+              type: "RENTAL_STARTED",
               relatedEntityId: rental_id,
               relatedEntityType: "rental",
             },
