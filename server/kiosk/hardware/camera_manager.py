@@ -36,32 +36,34 @@ USB_DEVICE_MAP: dict[int, str] = {
     4: "/dev/video10",   # Face cam  ← Web Camera usb-xhci-hcd.1-1.4
 }
 
-LOCKER_RESOLUTION = (1280, 960)
-FACE_RESOLUTION   = (640, 480)
+LOCKER_RESOLUTION = (1280, 720)   # MJPEG 30fps — supported by all cameras
+FACE_RESOLUTION   = (640, 480)    # MJPEG 30fps — sufficient for face detection
 JPEG_QUALITY      = 90
 
 
 def _open_usb(device: str, width: int, height: int) -> cv2.VideoCapture | None:
-    """Open a USB camera via GStreamer pipeline with resolution fallback."""
+    """Open a USB camera via GStreamer using MJPEG (30fps, low CPU)."""
+    # MJPEG pipeline — best for these cameras (30fps at 1280x720)
     gst = (
         f"v4l2src device={device} ! "
-        f"video/x-raw,width={width},height={height} ! "
-        f"videoconvert ! video/x-raw,format=BGR ! "
+        f"image/jpeg,width={width},height={height},framerate=30/1 ! "
+        f"jpegdec ! videoconvert ! video/x-raw,format=BGR ! "
         f"appsink max-buffers=1 drop=true sync=false"
     )
     cap = cv2.VideoCapture(gst, cv2.CAP_GSTREAMER)
     if cap.isOpened():
         return cap
 
-    # Fallback: let GStreamer negotiate resolution automatically
-    gst_simple = (
+    # Fallback: YUYV at 640x480 (always supported)
+    gst_fallback = (
         f"v4l2src device={device} ! "
+        f"video/x-raw,format=YUY2,width=640,height=480,framerate=30/1 ! "
         f"videoconvert ! video/x-raw,format=BGR ! "
         f"appsink max-buffers=1 drop=true sync=false"
     )
-    cap2 = cv2.VideoCapture(gst_simple, cv2.CAP_GSTREAMER)
+    cap2 = cv2.VideoCapture(gst_fallback, cv2.CAP_GSTREAMER)
     if cap2.isOpened():
-        log.warning("Camera %s opened without fixed resolution (fallback)", device)
+        log.warning("Camera %s opened with YUYV 640x480 fallback", device)
         return cap2
 
     log.error("Camera %s could not be opened — check v4l2-ctl --list-devices", device)
